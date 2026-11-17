@@ -74,6 +74,13 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                         RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
                         if (state.user?.role == AccountRole.ADMIN) RetroWindow("admin.exe", "Администрирование") { AdminScreen(state, model) }
                     }
+                    if (state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
+                        RetroWindow("invite.exe", "Пригласить партнёра") { OwnerInviteScreen(state, model) }
+                    }
+                    if (!state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
+                        RetroWindow("invite.exe", "Приглашение партнёра") { JoinInviteScreen(state, model) }
+                    }
+                    if (state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
                     Text(
                         "Токены хранятся только в памяти. После перезапуска приложения потребуется войти снова.",
                         modifier = Modifier.widthIn(max = 470.dp), fontSize = 11.sp, lineHeight = 18.7.sp

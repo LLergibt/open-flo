@@ -17,7 +17,9 @@ data class AuthState(
     val error: String? = null,
     val notice: String? = null,
     val createdUserVersion: Int = 0,
-    val createdPairVersion: Int = 0
+    val createdPairVersion: Int = 0,
+    val pendingInvite: PendingInvitation? = null,
+    val generatedInvite: GeneratedInvitation? = null
 )
 
 class AuthViewModel : ViewModel() {
@@ -35,7 +37,7 @@ class AuthViewModel : ViewModel() {
 
     fun login(username: String, password: String) = runAction {
         val user = repository.login(username, password)
-        mutableState.value = AuthState(user = user, busy = true)
+        mutableState.value = AuthState(user = user, busy = true, pendingInvite = mutableState.value.pendingInvite)
         loadDashboard()
     }
 
@@ -48,13 +50,14 @@ class AuthViewModel : ViewModel() {
     fun logout() {
         if (mutableState.value.busy) return
         val needsSetup = mutableState.value.needsSetup
-        mutableState.value = AuthState(busy = true, needsSetup = needsSetup)
+        val pending = mutableState.value.pendingInvite
+        mutableState.value = AuthState(busy = true, needsSetup = needsSetup, pendingInvite = pending)
         viewModelScope.launch {
             var error: String? = null
             try { repository.logout() }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (_: Exception) { error = "Вы вышли на этом устройстве. Не удалось подтвердить завершение серверной сессии." }
-            finally { mutableState.value = AuthState(busy = false, needsSetup = needsSetup, error = error, notice = if (error == null) "Вы вышли из аккаунта." else null) }
+            finally { mutableState.value = AuthState(busy = false, needsSetup = needsSetup, error = error, notice = if (error == null) "Вы вышли из аккаунта." else null, pendingInvite = pending) }
         }
     }
 
@@ -97,6 +100,48 @@ class AuthViewModel : ViewModel() {
         mutableState.value = mutableState.value.copy(notice = "Связь прекращена.")
     }
 
+    fun changeOwnPassword(current: String, newPassword: String) = runAction {
+        try { repository.changeOwnPassword(current, newPassword) }
+        catch (failure: ApiFailure) {
+            if (failure.code == "invalid_credentials") throw ApiFailure("current_password_incorrect")
+            throw failure
+        }
+        mutableState.value = AuthState(busy = true, notice = "Пароль изменён. Войдите снова.", pendingInvite = mutableState.value.pendingInvite)
+    }
+    fun generateInvite() = runAction {
+        if (mutableState.value.user?.role != AccountRole.TRACKER || mutableState.value.ownPair != null) throw ApiFailure("forbidden")
+        mutableState.value = mutableState.value.copy(generatedInvite = repository.generateInvite(), notice = "Приглашение создано. Передайте его только выбранному партнёру.")
+    }
+    fun revokeInvite() = runAction {
+        repository.revokeInvite()
+        mutableState.value = mutableState.value.copy(generatedInvite = null, notice = "Приглашения отозваны.")
+    }
+    fun previewInvite(input: String) = runAction {
+        mutableState.value = mutableState.value.copy(pendingInvite = null)
+        val token = InviteInput.parse(input) ?: throw ApiFailure("invalid_invite")
+        val preview = repository.previewInvite(token)
+        mutableState.value = mutableState.value.copy(pendingInvite = PendingInvitation(token, preview))
+    }
+    fun cancelInvite() {
+        if (!mutableState.value.busy) mutableState.value = mutableState.value.copy(pendingInvite = null, error = null, notice = "Приглашение отменено.")
+    }
+    fun registerInvitedPartner(username: String, name: String, password: String) = runAction {
+        if (mutableState.value.user != null) throw ApiFailure("forbidden")
+        val invitation = mutableState.value.pendingInvite ?: throw ApiFailure("invite_unavailable")
+        repository.registerInvite(invitation.token, username, name, password)
+        mutableState.value = AuthState(busy = true, notice = "Аккаунт создан и связан. Если вход не завершится, войдите с новым паролем.")
+        val user = repository.login(username, password)
+        mutableState.value = AuthState(user = user, busy = true, notice = "Аккаунт создан. Приглашение принято.")
+        loadDashboard()
+    }
+    fun acceptInvite() = runAction {
+        if (mutableState.value.user?.role != AccountRole.PARTNER || mutableState.value.ownPair != null) throw ApiFailure("forbidden")
+        val invitation = mutableState.value.pendingInvite ?: throw ApiFailure("invite_unavailable")
+        val pair = repository.acceptInvite(invitation.token)
+        mutableState.value = mutableState.value.copy(ownPair = pair, pendingInvite = null, notice = "Приглашение принято. Аккаунты связаны.")
+        loadDashboard()
+    }
+
     private suspend fun loadDashboard() {
         val user = repository.me()
         if (user.role == AccountRole.ADMIN) {
@@ -105,7 +150,7 @@ class AuthViewModel : ViewModel() {
             mutableState.value = mutableState.value.copy(user = user, users = users, pairs = pairs, ownPair = null)
         } else {
             val pair = repository.ownPair()
-            mutableState.value = mutableState.value.copy(user = user, ownPair = pair, users = emptyList(), pairs = emptyList())
+            mutableState.value = mutableState.value.copy(user = user, ownPair = pair, users = emptyList(), pairs = emptyList(), generatedInvite = if (pair != null) null else mutableState.value.generatedInvite)
         }
     }
     private fun adminAction(action: suspend () -> Unit) = runAction {
@@ -122,8 +167,8 @@ class AuthViewModel : ViewModel() {
             catch (failure: ApiFailure) {
                 if (failure.code == "unauthorized") {
                     repository.clearSession()
-                    mutableState.value = AuthState(busy = true, error = authErrorMessage(failure.code))
-                } else mutableState.value = mutableState.value.copy(error = authErrorMessage(failure.code))
+                    mutableState.value = AuthState(busy = true, error = authErrorMessage(failure.code), pendingInvite = mutableState.value.pendingInvite)
+                } else mutableState.value = mutableState.value.copy(error = authErrorMessage(failure.code), pendingInvite = if (failure.code == "invite_unavailable") null else mutableState.value.pendingInvite)
             } catch (_: Exception) {
                 mutableState.value = mutableState.value.copy(error = authErrorMessage("invalid_response"))
             } finally { mutableState.value = mutableState.value.copy(busy = false) }

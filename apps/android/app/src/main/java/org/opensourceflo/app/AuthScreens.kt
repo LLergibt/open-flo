@@ -21,7 +21,7 @@ internal fun LoginScreen(state: AuthState, model: AuthViewModel) {
         BodyText("Первый администратор ещё не создан. Выполните команду на компьютере, где запущен сервер.")
         RetroCard {
             Text("В КОРНЕ ПРОЕКТА", fontSize = 10.sp)
-            Text("./scripts/create-admin.sh admin", fontSize = 13.sp)
+            Text("./scripts/create-admin.sh", fontSize = 13.sp)
             BodyText("Пароль вводится скрыто в терминале. Аккаунт создаётся локально, без стандартного пароля.")
         }
         RetroButton("Проверить настройку", enabled = !state.busy) { model.reload() }
@@ -190,4 +190,4 @@ private fun ConfirmUnlink(label: String, question: String, busy: Boolean, onConf
     } else RetroButton(label, enabled = !busy, secondary = true) { confirming = true }
 }
 
-private fun validPassword(value: String): Boolean = value.codePointCount(0, value.length) in 12..128 && value.toByteArray(Charsets.UTF_8).size <= 512
+internal fun validPassword(value: String): Boolean = value.codePointCount(0, value.length) in 12..128 && value.toByteArray(Charsets.UTF_8).size <= 512

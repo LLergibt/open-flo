@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import OwnerInvitePanel from './OwnerInvitePanel.svelte';
   import { api, errorMessage } from '../lib/api';
   import type { Pair, User } from '../lib/types';
   import { roleNames } from '../lib/types';
@@ -81,7 +82,11 @@
   {:else}
     <div class="record-card empty-state">
       <h3>Активной пары нет</h3>
-      <p class="detail">Администратор может связать ваш аккаунт с другим участником.</p>
+      <p class="detail">{user.role === 'tracker' ? 'Пригласите партнёра по одноразовой ссылке или попросите администратора связать аккаунты.' : 'Откройте ссылку от владельца дневника или попросите администратора связать аккаунты.'}</p>
     </div>
   {/if}
 </section>
+
+{#if loaded && !pair && user.role === 'tracker'}
+  <OwnerInvitePanel disabled={disabled || busy} />
+{/if}

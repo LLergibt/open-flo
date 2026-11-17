@@ -18,6 +18,7 @@ pub struct AuthConfig {
     pub(crate) secret: Arc<Vec<u8>>,
     pub(crate) trusted_origins: Arc<Vec<String>>,
     pub(crate) cookie_secure: bool,
+    pub(crate) public_app_url: Option<String>,
 }
 
 impl AuthConfig {
@@ -44,6 +45,7 @@ impl AuthConfig {
             secret: Arc::new(secret.to_vec()),
             trusted_origins: Arc::new(trusted_origins),
             cookie_secure,
+            public_app_url: None,
         })
     }
 
@@ -70,7 +72,14 @@ impl AuthConfig {
         let origins = env::var("TRUSTED_ORIGINS")
             .unwrap_or_else(|_| "http://localhost:5173,http://127.0.0.1:5173,http://localhost:8080,http://127.0.0.1:8080".into())
             .split(',').map(|value| value.trim().to_owned()).collect();
-        Self::new(secret, origins, secure)
+        let mut config = Self::new(secret, origins, secure)?;
+        if let Ok(base) = env::var("PUBLIC_APP_URL") {
+            if !valid_origin(&base) || (!base.starts_with("https://") && !local_origin(&base)) {
+                return Err("PUBLIC_APP_URL must be an exact HTTPS origin (HTTP only for loopback development)".into());
+            }
+            config.public_app_url = Some(base);
+        }
+        Ok(config)
     }
 
     /// A fresh key for compatibility with the original synthetic-route tests.

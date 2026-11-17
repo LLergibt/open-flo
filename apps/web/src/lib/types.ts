@@ -15,6 +15,22 @@ export interface Pair {
   created_at: string;
 }
 
+export interface Invite {
+  token: string;
+  url: string | null;
+  expires_at: string;
+}
+
+export interface InvitePreview {
+  tracker_display_name: string;
+  expires_at: string;
+}
+
+export interface InviteRegistration {
+  user: User;
+  pair: Pair;
+}
+
 export interface CreateUser {
   username: string;
   display_name: string;

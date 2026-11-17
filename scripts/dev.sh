@@ -20,6 +20,7 @@ export API_PROXY_TARGET="${API_PROXY_TARGET:-http://127.0.0.1:8080}"
 # Explicit local development mode. Public installations require HTTPS + Secure cookies.
 export COOKIE_SECURE="${COOKIE_SECURE:-false}"
 export TRUSTED_ORIGINS="${TRUSTED_ORIGINS:-http://127.0.0.1:5173,http://localhost:5173}"
+export PUBLIC_APP_URL="${PUBLIC_APP_URL:-http://127.0.0.1:5173}"
 mkdir -p .data
 
 api_pid=""

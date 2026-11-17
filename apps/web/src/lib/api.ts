@@ -1,5 +1,5 @@
 import { isPair, isRecord, isUser } from './types.ts';
-import type { CreateUser, Pair, User } from './types.ts';
+import type { CreateUser, Invite, InvitePreview, InviteRegistration, Pair, User } from './types.ts';
 
 export class ApiError extends Error {
   readonly code: string;
@@ -18,6 +18,7 @@ const messages: Record<string, string> = {
   forbidden: 'Доступ запрещён. Проверьте права аккаунта и настройки адреса сервера.',
   invalid_input: 'Проверьте заполненные поля и допустимую длину значений.',
   invalid_credentials: 'Неверный логин или пароль.',
+  invite_unavailable: 'Приглашение недоступно: ссылка истекла, отозвана или уже использована.',
   conflict: 'Действие недоступно: логин уже занят, аккаунт связан или данные изменились. Обновите список.',
   rate_limited: 'Слишком много запросов. Подождите немного и повторите попытку.',
   internal_error: 'Сервер не смог выполнить запрос. Попробуйте позже.',
@@ -96,7 +97,7 @@ async function authenticated(path: string, init: RequestInit = {}): Promise<unkn
     if (epoch !== authEpoch) throw new ApiError('unauthorized', 401);
     return value;
   } catch (error) {
-    if (!(error instanceof ApiError) || error.status !== 401) throw error;
+    if (!(error instanceof ApiError) || error.status !== 401 || error.code !== 'unauthorized') throw error;
   }
 
   if (signingOut || epoch !== authEpoch) throw new ApiError('unauthorized', 401);
@@ -108,7 +109,7 @@ async function authenticated(path: string, init: RequestInit = {}): Promise<unkn
     if (epoch !== authEpoch) throw new ApiError('unauthorized', 401);
     return value;
   } catch (error) {
-    if (epoch === authEpoch && error instanceof ApiError && error.status === 401) sessionExpired?.();
+    if (epoch === authEpoch && error instanceof ApiError && error.status === 401 && error.code === 'unauthorized') sessionExpired?.();
     throw error;
   }
 }
@@ -184,6 +185,37 @@ export const api = {
     const value = await authenticated('/api/me/pair');
     if (!isRecord(value) || !(value.pair === null || isPair(value.pair))) throw new ApiError('invalid_response');
     return value.pair;
+  },
+  async changePassword(currentPassword: string, newPassword: string): Promise<void> {
+    await authenticated('/api/me/password', {
+      method: 'POST', body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+    authEpoch += 1;
+  },
+  async createInvite(): Promise<Invite> {
+    const value = await authenticated('/api/me/invite', { method: 'POST', body: '{}' });
+    if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
+    return { token: value.token, url: value.url, expires_at: value.expires_at };
+  },
+  async revokeInvite(): Promise<void> {
+    await authenticated('/api/me/invite', { method: 'DELETE' });
+  },
+  async previewInvite(token: string): Promise<InvitePreview> {
+    const value = await send('/api/invites/preview', { method: 'POST', body: JSON.stringify({ token }) });
+    if (!isRecord(value) || typeof value.tracker_display_name !== 'string' || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
+    return { tracker_display_name: value.tracker_display_name, expires_at: value.expires_at };
+  },
+  async registerInvite(input: { token: string; username: string; display_name: string; password: string }): Promise<InviteRegistration> {
+    const value = await send('/api/invites/register', {
+      method: 'POST', body: JSON.stringify({ token: input.token, username: input.username.trim().toLowerCase(), display_name: input.display_name.trim(), password: input.password, client: 'web' }),
+    });
+    if (!isRecord(value) || !isUser(value.user) || value.user.role !== 'partner' || !isPair(value.pair)) throw new ApiError('invalid_response');
+    return { user: value.user, pair: value.pair };
+  },
+  async acceptInvite(token: string): Promise<Pair> {
+    const value = await authenticated('/api/me/invite/accept', { method: 'POST', body: JSON.stringify({ token }) });
+    if (!isPair(value)) throw new ApiError('invalid_response');
+    return value;
   },
   async leavePair(): Promise<void> {
     await authenticated('/api/me/pair', { method: 'DELETE' });

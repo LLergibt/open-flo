@@ -3,11 +3,15 @@
   import AdminPanel from './components/AdminPanel.svelte';
   import LoginForm from './components/LoginForm.svelte';
   import MemberPanel from './components/MemberPanel.svelte';
+  import PasswordForm from './components/PasswordForm.svelte';
+  import InviteFlow from './components/InviteFlow.svelte';
+  import { consumeInviteFragment } from './lib/invites';
   import { api, ApiError, errorMessage, onSessionExpired } from './lib/api';
   import { roleNames } from './lib/types';
   import type { User } from './lib/types';
 
   let user = $state<User | null>(null);
+  let pendingInvite = $state<string | null>(null);
   let phase = $state<'loading' | 'ready' | 'error'>('loading');
   let needsSetup = $state(false);
   let restoring = $state(false);
@@ -66,6 +70,17 @@
     phase = 'ready';
   }
 
+  function inviteAccepted(account: User) {
+    pendingInvite = null;
+    loggedIn(account);
+    notice = 'Приглашение принято. Аккаунты связаны.';
+  }
+
+  function inviteRegistered(message: string) {
+    pendingInvite = null;
+    signedOut(message);
+  }
+
   async function logout() {
     if (loggingOut) return;
     loggingOut = true;
@@ -84,6 +99,9 @@
 
   onMount(() => {
     mounted = true;
+    const invitation = consumeInviteFragment(window.location, window.history);
+    pendingInvite = invitation.token;
+    if (invitation.invalid) notice = 'Ссылка приглашения имеет неправильный формат. Попросите владельца создать новую.';
     const unsubscribe = onSessionExpired(() => {
       if (user) signedOut('Сессия завершена. Войдите снова.');
     });
@@ -108,7 +126,7 @@
   {#if retryLogout}<button class="secondary spaced-bottom" type="button" onclick={() => void logout()} disabled={loggingOut}>{loggingOut ? 'Выходим…' : 'Повторить выход'}</button>{/if}
 
   <section class="window" aria-labelledby="screen-title">
-    <div class="titlebar" aria-hidden="true"><span>{user ? 'profile.exe' : 'auth.exe'}</span><span class="window-controls">─ □ ×</span></div>
+    <div class="titlebar" aria-hidden="true"><span>{pendingInvite ? 'invite.exe' : user ? 'profile.exe' : 'auth.exe'}</span><span class="window-controls">─ □ ×</span></div>
     <div class="window-body">
       <p class="eyebrow">СВОЙ СЕРВЕР · СВОИ ДАННЫЕ</p>
       {#if phase === 'loading'}
@@ -123,11 +141,13 @@
         <p class="intro">Первый администратор ещё не создан. Выполните команду на компьютере, где запущен сервер.</p>
         <div class="message-panel setup-panel">
           <p class="panel-label">В КОРНЕ ПРОЕКТА</p>
-          <pre class="command"><code>./scripts/create-admin.sh admin</code></pre>
+          <pre class="command"><code>./scripts/create-admin.sh</code></pre>
           <p class="detail">Пароль вводится скрыто в терминале. Аккаунт создаётся локально, без стандартного пароля.</p>
         </div>
-        <details class="help"><summary>Команда без вспомогательного скрипта</summary><pre class="command"><code>cargo run --locked -p flo-api -- create-admin --username admin --display-name 'Администратор'</code></pre></details>
+        <details class="help"><summary>Команда без вспомогательного скрипта</summary><pre class="command"><code>cargo run --locked -p flo-api -- create-admin --username root --display-name root</code></pre></details>
         <button type="button" onclick={() => void restore()} disabled={restoring}>Проверить настройку</button>
+      {:else if pendingInvite}
+        <InviteFlow token={pendingInvite} {user} disabled={loggingOut || retryLogout} onlogin={loggedIn} onaccepted={inviteAccepted} onregistered={inviteRegistered} oncancel={() => { pendingInvite = null; }} onlogout={() => void logout()} />
       {:else if user}
         <div class="profile-heading">
           <h1 id="screen-title">Мой аккаунт</h1>
@@ -143,17 +163,18 @@
         {:else}
           {#key user.id}<MemberPanel {user} disabled={loggingOut} />{/key}
         {/if}
+        <PasswordForm disabled={loggingOut} onchanged={() => signedOut('Пароль изменён. Все ваши сессии завершены. Войдите заново с новым паролем.')} />
       {:else}
         <h1 id="screen-title">Вход в аккаунт</h1>
         <p class="intro">Введите логин и пароль, которые выдал администратор вашего сервера.</p>
         <div class="spaced"><LoginForm onlogin={loggedIn} disabled={loggingOut || retryLogout} /></div>
-        <details class="help"><summary>Помощь администратору</summary><p class="detail">Первый аккаунт создаётся в терминале на сервере командой ниже. Другие аккаунты создаются после входа в админке.</p><pre class="command"><code>./scripts/create-admin.sh admin</code></pre></details>
+        <details class="help"><summary>Помощь администратору</summary><p class="detail">Первый аккаунт создаётся в терминале на сервере командой ниже. Другие аккаунты создаются после входа в админке.</p><pre class="command"><code>./scripts/create-admin.sh</code></pre></details>
       {/if}
     </div>
     <footer class="window-footer"><span>open-source-flo</span><span>web / local</span></footer>
   </section>
 
-  {#if phase === 'ready' && user?.role === 'admin'}
+  {#if phase === 'ready' && !pendingInvite && user?.role === 'admin'}
     {#key user.id}<AdminPanel {user} disabled={loggingOut} onselfpasswordchanged={() => signedOut('Пароль изменён. Войдите заново с новым паролем.')} />{/key}
   {/if}
   <p class="footnote">Аккаунты и пары работают на вашем сервере. Дневник и расчёты цикла появятся на следующем этапе.</p>

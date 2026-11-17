@@ -19,7 +19,7 @@ Pair: { id: string UUID, tracker: User, partner: User, created_at: string ISO860
 - GET /api/me/pair -> { pair: Pair | null }. Только своя пара; список чужих пар доступен лишь администратору.
 - DELETE /api/me/pair ->204. Любой участник может прекратить связь, последующие запросы показывают null. Старая пара не даёт новых прав.
 - GET /api/admin/users -> { users: User[] }.
-- POST /api/admin/users { username, display_name, password, role } ->201 User. Только admin, нет публичной регистрации.
+- POST /api/admin/users { username, display_name, password, role } ->201 User. Только admin, самостоятельная регистрация разрешена только партнёру по действующему приглашению.
 - PATCH /api/admin/users/{id} { is_active?: boolean, password?: string } ->User. Смена пароля и отключение отзывают сессии; не допускать отключения последнего активного admin и собственной случайной блокировки. Изменение role пока не поддерживается.
 - GET /api/admin/pairs -> { pairs: Pair[] }.
 - POST /api/admin/pairs { tracker_id, partner_id } ->201 Pair. Только admin. Разные существующие активные аккаунты требуемых ролей, один активный pair на каждого участника, атомарная проверка/создание.
@@ -41,8 +41,10 @@ Web: HttpOnly cookies flo_access и flo_refresh, SameSite=Strict, Path=/api. Sec
 
 Клиенты: web использует cookies и credentials same-origin; токены не пишутся в localStorage/sessionStorage. Android хранит access/refresh только в памяти на этом этапе, после перезапуска требует вход; пароли не сохраняются. Авто-refresh не более одного повтора на исходный запрос, logout очищает локальное состояние. При 403 не обновлять токены и не зацикливаться.
 
-Первый admin — локальная CLI create-admin, интерактивный скрытый пароль либо --password-stdin. Никаких дефолтных аккаунтов/паролей. CLI предотвращает bootstrap второго admin; остальных создаёт admin через UI. Тестовые фикстуры только в тестах и временной БД.
+Первый admin — локальная CLI create-admin, интерактивный скрытый пароль либо --password-stdin. Скрипт create-admin.sh предлагает логин и имя root, пароль вводится пользователем; аккаунты автоматически не создаются. CLI предотвращает bootstrap второго admin; остальных создаёт admin через UI. Тестовые фикстуры только в тестах и временной БД.
 
 ## Проверки
 
 Успех входа, неверный пароль, неизвестный user, истёкший/поддельный JWT, refresh/replay/logout, отключённый user, обход admin role, перечисление чужих пар, self/wrong-role/duplicate pair, атомарность создания, отзыв связи. Web login→admin create accounts→pair→logout→member login→own pair→unlink. Android компиляция и unit/static checks без телефона. Продакшен с паролями требует HTTPS; пароль/refresh не выводить в логи и отчёты.
+
+Дополнение: [приглашения и смена пароля](INVITES_CONTRACT.md).

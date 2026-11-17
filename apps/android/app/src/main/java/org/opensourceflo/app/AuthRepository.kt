@@ -116,7 +116,7 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
         val snapshot = sessionMutex.withLock { (session ?: throw ApiFailure("unauthorized")) to generation }
         val original = snapshot.first
         var response = transport.send(method, path, original.access, body?.toString())
-        if (response.status != 401) return response
+        if (response.status != 401 || errorCode(response) != "unauthorized") return response
         val renewed = sessionMutex.withLock {
             val current = session ?: throw ApiFailure("unauthorized")
             if (generation != snapshot.second) throw ApiFailure("unauthorized")
@@ -140,7 +140,7 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
             }
         }
         response = transport.send(method, path, renewed.access, body?.toString())
-        if (response.status == 401) {
+        if (response.status == 401 && errorCode(response) == "unauthorized") {
             sessionMutex.withLock { if (session === renewed) { session = null; generation++ } }
             throw ApiFailure("unauthorized")
         }
@@ -178,6 +178,37 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
     )))
     suspend fun unlinkPair(id: String) { expect(protected("DELETE", "/api/admin/pairs/${safeId(id)}"), 204) }
 
+    suspend fun changeOwnPassword(currentPassword: String, newPassword: String) {
+        expect(protected("POST", "/api/me/password", JSONObject().put("current_password", currentPassword).put("new_password", newPassword)), 204)
+        clearSession()
+    }
+    suspend fun generateInvite(): GeneratedInvitation {
+        val value = json(expect(protected("POST", "/api/me/invite", JSONObject()), 201))
+        val token = string(value, "token")
+        if (InviteInput.parse(token) != token || !value.has("url")) throw ApiFailure("invalid_response")
+        val url = if (value.isNull("url")) null else string(value, "url")
+        if (url != null && InviteInput.parse(url) != token) throw ApiFailure("invalid_response")
+        return GeneratedInvitation(token, url, string(value, "expires_at"))
+    }
+    suspend fun revokeInvite() { expect(protected("DELETE", "/api/me/invite"), 204) }
+    suspend fun previewInvite(token: String): InvitePreview {
+        val value = json(expect(transport.send("POST", "/api/invites/preview", null, JSONObject().put("token", token).toString()), 200))
+        return InvitePreview(string(value, "tracker_display_name"), string(value, "expires_at"))
+    }
+    suspend fun registerInvite(token: String, username: String, name: String, password: String): InviteRegistration {
+        val body = JSONObject().put("token", token).put("username", username.trim().lowercase(Locale.ROOT))
+            .put("display_name", name.trim()).put("password", password).put("client", "native")
+        val value = json(expect(transport.send("POST", "/api/invites/register", null, body.toString()), 201))
+        val user = account(value.getJSONObject("user"))
+        val pair = pair(value.getJSONObject("pair"))
+        if (user.role != AccountRole.PARTNER || pair.partner.id != user.id) throw ApiFailure("invalid_response")
+        return InviteRegistration(user, pair)
+    }
+    suspend fun acceptInvite(token: String): AccountPair = pair(json(expect(
+        protected("POST", "/api/me/invite/accept", JSONObject().put("token", token)), 201
+    )))
+
+    private fun errorCode(response: ApiResponse): String = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("")
     private fun safeId(id: String): String {
         if (!id.matches(Regex("[a-fA-F0-9-]{36}"))) throw ApiFailure("invalid_response")
         return id
@@ -185,7 +216,7 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
     private fun json(response: ApiResponse): JSONObject = try { JSONObject(response.body) } catch (_: Exception) { throw ApiFailure("invalid_response") }
     private fun expect(response: ApiResponse, expected: Int): ApiResponse {
         if (response.status == expected) return response
-        val allowed = setOf("unauthorized", "forbidden", "invalid_input", "invalid_credentials", "conflict", "rate_limited", "internal_error")
+        val allowed = setOf("unauthorized", "forbidden", "invalid_input", "invalid_credentials", "conflict", "rate_limited", "internal_error", "invite_unavailable")
         val error = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("")
         throw ApiFailure(if (error in allowed) error else when (response.status) {
             401 -> "unauthorized"; 403 -> "forbidden"; 400 -> "invalid_input"; 409 -> "conflict"; 429 -> "rate_limited"; else -> "internal_error"
@@ -214,6 +245,9 @@ fun authErrorMessage(code: String): String = when (code) {
     "forbidden" -> "Недостаточно прав для этого действия."
     "invalid_input" -> "Проверьте заполнение полей. Пароль — от 12 до 128 символов."
     "invalid_credentials" -> "Неверный логин или пароль."
+    "current_password_incorrect" -> "Текущий пароль неверен."
+    "invalid_invite" -> "Вставьте ссылку приглашения или код из 64 шестнадцатеричных символов."
+    "invite_unavailable" -> "Приглашение недоступно: срок истёк, ссылка отозвана или уже использована."
     "conflict" -> "Аккаунт уже существует или один из участников уже связан в пару."
     "rate_limited" -> "Слишком много попыток. Попробуйте позже."
     "network_error" -> "Не удалось связаться с API. Проверьте подключение и адрес сервера."
