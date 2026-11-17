@@ -14,8 +14,6 @@ import androidx.compose.ui.unit.sp
 
 @Composable
 internal fun LoginScreen(state: AuthState, model: AuthViewModel) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
     Notice(state)
     if (state.needsSetup) {
         BodyText("Первый администратор ещё не создан. Выполните команду на компьютере, где запущен сервер.")
@@ -28,13 +26,7 @@ internal fun LoginScreen(state: AuthState, model: AuthViewModel) {
         return
     }
     BodyText("Введите логин и пароль, которые выдал администратор вашего сервера.")
-    RetroField("Логин", username, !state.busy) { username = it }
-    RetroField("Пароль", password, !state.busy, password = true) { password = it }
-    RetroButton("Войти", enabled = !state.busy && username.isNotBlank() && password.isNotEmpty() && !state.needsSetup) {
-        val submitted = password
-        password = ""
-        model.login(username, submitted)
-    }
+    LoginForm(enabled = !state.busy, onSubmit = model::login)
     if (state.error != null && state.user == null) RetroButton("Проверить сервер", enabled = !state.busy, secondary = true) { model.reload() }
 }
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasswordField from "./PasswordField.svelte";
   import { api, ApiError, errorMessage } from '../lib/api';
 
   let { disabled = false, onchanged }: { disabled?: boolean; onchanged: () => void } = $props();
@@ -40,9 +41,9 @@
     <p class="detail">После смены пароля все ваши сессии будут завершены. Войдите заново с новым паролем.</p>
     <form class="spaced" onsubmit={submit} aria-label="Сменить свой пароль" aria-busy={busy}>
       <fieldset disabled={busy || disabled}>
-        <div class="field"><label for="current-password">Текущий пароль</label><input id="current-password" name="current-password" type="password" bind:value={currentPassword} autocomplete="current-password" required maxlength="128" /></div>
-        <div class="field"><label for="self-new-password">Новый пароль</label><input id="self-new-password" name="self-new-password" type="password" bind:value={newPassword} autocomplete="new-password" required minlength="12" maxlength="128" /></div>
-        <div class="field"><label for="self-confirm-password">Повторите новый пароль</label><input id="self-confirm-password" name="self-confirm-password" type="password" bind:value={confirmation} autocomplete="new-password" required minlength="12" maxlength="128" /></div>
+        <PasswordField label="Текущий пароль" id="current-password" name="current-password"  bind:value={currentPassword} autocomplete="current-password" required maxlength={128} />
+        <PasswordField label="Новый пароль" id="self-new-password" name="self-new-password"  bind:value={newPassword} autocomplete="new-password" required minlength={12} maxlength={128} />
+        <PasswordField label="Повторите новый пароль" id="self-confirm-password" name="self-confirm-password"  bind:value={confirmation} autocomplete="new-password" required minlength={12} maxlength={128} />
         <p class="field-hint">12–128 символов. Поля очищаются при отправке.</p>
         {#if error}<p class="feedback error" role="alert">{error}</p>{/if}
         <button type="submit">{busy ? 'Сохраняем…' : 'Сохранить свой пароль'}</button>

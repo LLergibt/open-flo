@@ -133,18 +133,8 @@ internal fun JoinInviteScreen(state: AuthState, model: AuthViewModel) {
 
 @Composable
 private fun InviteLoginForm(state: AuthState, model: AuthViewModel) {
-    var username by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        BodyText("Войдите в существующий аккаунт партнёра. Затем отдельно подтвердите приглашение.")
-        RetroField("Логин", username, !state.busy) { username = it }
-        RetroField("Пароль", password, !state.busy, password = true) { password = it }
-        RetroButton("Войти в аккаунт партнёра", enabled = !state.busy && username.isNotBlank() && password.isNotEmpty()) {
-            val submitted = password
-            password = ""
-            model.login(username, submitted)
-        }
-    }
+    BodyText("Войдите в существующий аккаунт партнёра. Затем отдельно подтвердите приглашение.")
+    LoginForm(enabled = !state.busy, submitLabel = "Войти в аккаунт партнёра", onSubmit = model::login)
 }
 
 @Composable

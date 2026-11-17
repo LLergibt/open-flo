@@ -102,6 +102,7 @@ class AuthViewModel : ViewModel() {
 
     fun deleteUser(user: Account) = adminAction {
         repository.deleteUser(user.id)
+        loadDashboard()
         mutableState.value = mutableState.value.copy(notice = "Аккаунт удалён.")
     }
     fun deleteSelf(password: String) = runAction {

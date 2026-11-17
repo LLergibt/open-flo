@@ -1,3 +1,9 @@
+mod account_service;
+mod accounts;
+mod pairs;
+mod store;
+pub use account_service::bootstrap_admin;
+use store::insert_user;
 mod deletion;
 mod invites;
 use std::{
@@ -326,7 +332,7 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
         .route("/api/auth/refresh", post(refresh))
         .route("/api/auth/logout", post(logout))
         .route("/api/me", get(me).delete(deletion::own))
-        .route("/api/me/password", post(invites::password))
+        .route("/api/me/password", post(accounts::password))
         .route(
             "/api/me/invite",
             post(invites::create).delete(invites::revoke),
@@ -336,14 +342,23 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
         .route("/api/invites/register", post(invites::register))
         .route("/api/admin/invites", post(invites::create_account))
         .route("/api/admin/invites/{role}", delete(invites::revoke_account))
-        .route("/api/me/pair", get(my_pair).delete(unlink_my_pair))
-        .route("/api/admin/users", get(users).post(create_user))
+        .route(
+            "/api/me/pair",
+            get(pairs::my_pair).delete(pairs::unlink_my_pair),
+        )
+        .route(
+            "/api/admin/users",
+            get(accounts::users).post(accounts::create_user),
+        )
         .route(
             "/api/admin/users/{id}",
-            axum::routing::patch(patch_user).delete(deletion::admin),
+            axum::routing::patch(accounts::patch_user).delete(deletion::admin),
         )
-        .route("/api/admin/pairs", get(pairs).post(create_pair))
-        .route("/api/admin/pairs/{id}", delete(unlink_pair))
+        .route(
+            "/api/admin/pairs",
+            get(pairs::pairs).post(pairs::create_pair),
+        )
+        .route("/api/admin/pairs/{id}", delete(pairs::unlink_pair))
         .route("/api/setup/status", get(setup_status))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
         .layer(axum::middleware::map_response(no_store))
@@ -877,21 +892,6 @@ async fn setup_status(
     Ok(Json(serde_json::json!({"needs_setup": count == 0})))
 }
 
-async fn users(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, UserRecord>("SELECT * FROM users ORDER BY created_at,id")
-        .fetch_all(&state.pool)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    Ok(Json(
-        serde_json::json!({"users": rows.iter().map(UserRecord::public).collect::<Vec<_>>()}),
-    ))
-}
-
 fn conflict_or_internal(error: sqlx::Error) -> AuthError {
     if let sqlx::Error::Database(database) = &error {
         if database.is_unique_violation()
@@ -905,322 +905,15 @@ fn conflict_or_internal(error: sqlx::Error) -> AuthError {
     AuthError::internal()
 }
 
-async fn create_user(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-    ApiJson(input): ApiJson<CreateUserInput>,
-) -> Result<Response, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    check_origin(&headers, &state.config, false)?;
-    let username = normalized_username(&input.username)?;
-    let display = display_name(&input.display_name)?;
-    if !password_valid(&input.password)
-        || !["admin", "tracker", "partner"].contains(&input.role.as_str())
-    {
-        return Err(AuthError::invalid());
-    }
-    let hash = hash_password(input.password, state.hashing.clone()).await?;
-    let user = User {
-        id: Uuid::new_v4().to_string(),
-        username,
-        display_name: display,
-        role: input.role,
-        is_active: true,
-    };
-    let mut transaction = actor_transaction(&state, &actor, true).await?;
-    insert_user(&mut transaction, &user, &hash).await?;
-    transaction
-        .commit()
-        .await
-        .map_err(|_| AuthError::internal())?;
-    Ok((StatusCode::CREATED, Json(user)).into_response())
-}
-
-async fn insert_user(
-    transaction: &mut Transaction<'_, Sqlite>,
-    user: &User,
-    hash: &str,
-) -> Result<(), AuthError> {
-    sqlx::query("INSERT INTO users(id,username,display_name,role,password_hash,created_at) VALUES(?,?,?,?,?,?)")
-        .bind(&user.id).bind(&user.username).bind(&user.display_name).bind(&user.role).bind(hash).bind(now())
-        .execute(&mut **transaction).await.map_err(conflict_or_internal)?;
-    Ok(())
-}
-
-async fn patch_user(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-    ApiJson(input): ApiJson<PatchUserInput>,
-) -> Result<Json<User>, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    check_origin(&headers, &state.config, false)?;
-    valid_id(&id)?;
-    if input.is_active.is_none() && input.password.is_none() {
-        return Err(AuthError::invalid());
-    }
-    let hash = if let Some(password) = input.password {
-        if !password_valid(&password) {
-            return Err(AuthError::invalid());
-        }
-        Some(hash_password(password, state.hashing.clone()).await?)
-    } else {
-        None
-    };
-    let mut transaction = actor_transaction(&state, &actor, true).await?;
-    let record = sqlx::query_as::<_, UserRecord>("SELECT * FROM users WHERE id=?")
-        .bind(&id)
-        .fetch_optional(&mut *transaction)
-        .await
+fn limited(state: &AuthState, key: &str) -> Result<(), AuthError> {
+    if state
+        .login_limits
+        .lock()
         .map_err(|_| AuthError::internal())?
-        .ok_or_else(AuthError::invalid)?;
-    if input.is_active == Some(false) {
-        if id == actor.user.id {
-            return Err(AuthError::conflict());
-        }
-        if record.role == "admin" && record.is_active {
-            let count = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM users WHERE role='admin' AND is_active=1",
-            )
-            .fetch_one(&mut *transaction)
-            .await
-            .map_err(|_| AuthError::internal())?;
-            if count <= 1 {
-                return Err(AuthError::conflict());
-            }
-        }
+        .allow(key)
+    {
+        Ok(())
+    } else {
+        Err(AuthError::limited())
     }
-    if let Some(active) = input.is_active {
-        sqlx::query("UPDATE users SET is_active=? WHERE id=?")
-            .bind(active)
-            .bind(&id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|_| AuthError::internal())?;
-    }
-    if let Some(hash) = &hash {
-        sqlx::query("UPDATE users SET password_hash=? WHERE id=?")
-            .bind(hash)
-            .bind(&id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|_| AuthError::internal())?;
-    }
-    if input.is_active == Some(false) || hash.is_some() {
-        sqlx::query("UPDATE sessions SET revoked_at=? WHERE user_id=?")
-            .bind(now())
-            .bind(&id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|_| AuthError::internal())?;
-    }
-    if input.is_active == Some(false) {
-        sqlx::query("DELETE FROM pairs WHERE tracker_id=? OR partner_id=?")
-            .bind(&id)
-            .bind(&id)
-            .execute(&mut *transaction)
-            .await
-            .map_err(|_| AuthError::internal())?;
-    }
-    transaction
-        .commit()
-        .await
-        .map_err(|_| AuthError::internal())?;
-    let mut user = record.public();
-    if let Some(active) = input.is_active {
-        user.is_active = active;
-    }
-    Ok(Json(user))
-}
-
-async fn public_pair(pool: &SqlitePool, record: PairRecord) -> Result<Pair, AuthError> {
-    let users = sqlx::query_as::<_, UserRecord>("SELECT * FROM users WHERE id=? OR id=?")
-        .bind(&record.tracker_id)
-        .bind(&record.partner_id)
-        .fetch_all(pool)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    let tracker = users
-        .iter()
-        .find(|user| user.id == record.tracker_id)
-        .ok_or_else(AuthError::internal)?
-        .public();
-    let partner = users
-        .iter()
-        .find(|user| user.id == record.partner_id)
-        .ok_or_else(AuthError::internal)?
-        .public();
-    Ok(Pair {
-        id: record.id,
-        tracker,
-        partner,
-        created_at: record.created_at,
-    })
-}
-
-async fn pairs(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, PairRecord>("SELECT * FROM pairs ORDER BY created_at,id")
-        .fetch_all(&state.pool)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    let mut pairs = Vec::with_capacity(rows.len());
-    for row in rows {
-        pairs.push(public_pair(&state.pool, row).await?);
-    }
-    Ok(Json(serde_json::json!({"pairs": pairs})))
-}
-
-async fn create_pair(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-    ApiJson(input): ApiJson<CreatePairInput>,
-) -> Result<Response, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    check_origin(&headers, &state.config, false)?;
-    valid_id(&input.tracker_id)?;
-    valid_id(&input.partner_id)?;
-    if input.tracker_id == input.partner_id {
-        return Err(AuthError::invalid());
-    }
-    let mut transaction = actor_transaction(&state, &actor, true).await?;
-    let rows = sqlx::query_as::<_, UserRecord>("SELECT * FROM users WHERE id=? OR id=?")
-        .bind(&input.tracker_id)
-        .bind(&input.partner_id)
-        .fetch_all(&mut *transaction)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    let tracker = rows
-        .iter()
-        .find(|row| row.id == input.tracker_id && row.role == "tracker" && row.is_active)
-        .ok_or_else(AuthError::invalid)?
-        .public();
-    let partner = rows
-        .iter()
-        .find(|row| row.id == input.partner_id && row.role == "partner" && row.is_active)
-        .ok_or_else(AuthError::invalid)?
-        .public();
-    let pair = Pair {
-        id: Uuid::new_v4().to_string(),
-        tracker,
-        partner,
-        created_at: OffsetDateTime::now_utc()
-            .format(&Rfc3339)
-            .map_err(|_| AuthError::internal())?,
-    };
-    sqlx::query("INSERT INTO pairs(id,tracker_id,partner_id,created_at) VALUES(?,?,?,?)")
-        .bind(&pair.id)
-        .bind(&pair.tracker.id)
-        .bind(&pair.partner.id)
-        .bind(&pair.created_at)
-        .execute(&mut *transaction)
-        .await
-        .map_err(conflict_or_internal)?;
-    transaction
-        .commit()
-        .await
-        .map_err(|_| AuthError::internal())?;
-    Ok((StatusCode::CREATED, Json(pair)).into_response())
-}
-
-async fn my_pair(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    let row = sqlx::query_as::<_, PairRecord>("SELECT p.* FROM pairs p JOIN users t ON t.id=p.tracker_id JOIN users u ON u.id=p.partner_id WHERE (p.tracker_id=? OR p.partner_id=?) AND t.is_active=1 AND u.is_active=1")
-        .bind(&actor.user.id).bind(&actor.user.id).fetch_optional(&state.pool).await.map_err(|_| AuthError::internal())?;
-    let pair = match row {
-        Some(row) => Some(public_pair(&state.pool, row).await?),
-        None => None,
-    };
-    Ok(Json(serde_json::json!({"pair": pair})))
-}
-
-async fn unlink_my_pair(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-) -> Result<StatusCode, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    check_origin(&headers, &state.config, false)?;
-    let mut transaction = actor_transaction(&state, &actor, false).await?;
-    sqlx::query("DELETE FROM pairs WHERE tracker_id=? OR partner_id=?")
-        .bind(&actor.user.id)
-        .bind(&actor.user.id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    transaction
-        .commit()
-        .await
-        .map_err(|_| AuthError::internal())?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-async fn unlink_pair(
-    State(state): State<AuthState>,
-    headers: HeaderMap,
-    Path(id): Path<String>,
-) -> Result<StatusCode, AuthError> {
-    let actor = authenticate(&headers, &state).await?;
-    require_admin(&actor)?;
-    check_origin(&headers, &state.config, false)?;
-    valid_id(&id)?;
-    let mut transaction = actor_transaction(&state, &actor, true).await?;
-    sqlx::query("DELETE FROM pairs WHERE id=?")
-        .bind(id)
-        .execute(&mut *transaction)
-        .await
-        .map_err(|_| AuthError::internal())?;
-    transaction
-        .commit()
-        .await
-        .map_err(|_| AuthError::internal())?;
-    Ok(StatusCode::NO_CONTENT)
-}
-
-/// Local bootstrap only. The transaction prevents concurrent first-admin creation.
-pub async fn bootstrap_admin(
-    pool: &SqlitePool,
-    username: &str,
-    display: &str,
-    password: String,
-) -> Result<User, StartupError> {
-    let username = normalized_username(username)
-        .map_err(|_| "username must be 3–64 ASCII characters [a-z0-9_.-]")?;
-    let display = display_name(display).map_err(|_| "display name must be 1–80 characters")?;
-    if !password_valid(&password) {
-        return Err("password must be 12–128 characters and at most 512 bytes".into());
-    }
-    let hash = hash_password(password, Arc::new(Semaphore::new(1)))
-        .await
-        .map_err(|_| "password hashing failed")?;
-    let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE role='admin'")
-        .fetch_one(&mut *transaction)
-        .await?;
-    if count != 0 {
-        return Err(
-            "an administrator already exists; create further accounts through the admin API".into(),
-        );
-    }
-    let user = User {
-        id: Uuid::new_v4().to_string(),
-        username,
-        display_name: display,
-        role: "admin".into(),
-        is_active: true,
-    };
-    insert_user(&mut transaction, &user, &hash)
-        .await
-        .map_err(|_| "administrator creation failed")?;
-    transaction.commit().await?;
-    Ok(user)
 }

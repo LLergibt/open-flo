@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasswordField from "./PasswordField.svelte";
   import { api, ApiError, errorMessage } from '../lib/api';
   let { onremoved, disabled = false }: { onremoved: () => void; disabled?: boolean } = $props();
   let password = $state('');
@@ -18,7 +19,7 @@
   <details class="help"><summary>Удалить мой аккаунт</summary>
     <p class="detail">Аккаунт будет удалён без возможности отмены. Сессии, приглашения и связь с партнёром будут удалены. Аккаунт партнёра сохранится.</p>
     <form class="spaced" onsubmit={remove}><fieldset disabled={busy || disabled}>
-      <div class="field"><label for="delete-password">Текущий пароль</label><input id="delete-password" type="password" autocomplete="current-password" bind:value={password} required maxlength="128" /></div>
+      <PasswordField label="Текущий пароль" id="delete-password"  autocomplete="current-password" bind:value={password} required maxlength={128} />
       <label class="checkbox-field"><input type="checkbox" required /><span>Подтверждаю удаление моего аккаунта.</span></label>
       {#if error}<p class="feedback error" role="alert">{error}</p>{/if}
       <button type="submit">Удалить аккаунт навсегда</button>

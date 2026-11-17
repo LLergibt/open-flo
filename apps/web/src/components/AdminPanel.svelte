@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasswordField from "./PasswordField.svelte";
   import OwnerInvitePanel from './OwnerInvitePanel.svelte';
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../lib/api';
@@ -207,7 +208,7 @@
             </div>
             <p class="field-hint" id="username-hint">Логин: 3–64 символа, строчные латинские буквы, цифры, точка, дефис и _.</p>
             <div class="field-grid">
-              <div class="field"><label for="new-password">Пароль</label><input id="new-password" name="new-password" type="password" bind:value={password} autocomplete="new-password" required minlength="12" maxlength="128" aria-describedby="password-hint" /></div>
+              <PasswordField label="Пароль" id="new-password" name="new-password"  bind:value={password} autocomplete="new-password" required minlength={12} maxlength={128} aria-describedby="password-hint" />
               <div class="field"><label for="new-role">Роль</label><select id="new-role" name="role" bind:value={role}><option value="tracker">Владелец дневника</option><option value="partner">Партнёр</option><option value="admin">Администратор</option></select></div>
             </div>
             <p class="field-hint" id="password-hint">Пароль: 12–128 символов. Передайте его владельцу безопасным способом.</p>
@@ -242,7 +243,7 @@
               {#if resetId === account.id}
                 <form class="inline-form" onsubmit={(event) => void changePassword(event, account)} aria-label={`Новый пароль для ${account.username}`}>
                   <fieldset disabled={locked}>
-                    <div class="field"><label for={`password-${account.id}`}>Новый пароль для @{account.username}</label><input id={`password-${account.id}`} type="password" bind:value={resetPassword} autocomplete="new-password" required minlength="12" maxlength="128" /></div>
+                    <PasswordField label={`Новый пароль для @${account.username}`} id={`password-${account.id}`} bind:value={resetPassword} autocomplete="new-password" required minlength={12} maxlength={128} />
                     <p class="field-hint">12–128 символов. Все сессии этого аккаунта будут завершены.{account.id === user.id ? ' Вам потребуется войти заново.' : ''}</p>
                     <div class="actions compact"><button class="small" type="submit">{busy === `password-${account.id}` ? 'Сохраняем…' : 'Сохранить пароль'}</button><button class="secondary small" type="button" onclick={() => { resetId = null; resetPassword = ''; }}>Отмена</button></div>
                   </fieldset>

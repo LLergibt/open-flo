@@ -10,7 +10,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,9 +23,6 @@ import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -137,22 +133,6 @@ internal fun RetroButton(text: String, modifier: Modifier = Modifier, enabled: B
         colors = ButtonDefaults.buttonColors(containerColor = if (secondary) Accent else Ink, contentColor = if (secondary) Ink else Panel,
             disabledContainerColor = Ink.copy(alpha = 0.45f), disabledContentColor = Panel)
     ) { Text(text, color = if (secondary) Ink else Panel, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 19.sp, fontWeight = FontWeight.Normal) }
-}
-
-@Composable
-internal fun RetroField(label: String, value: String, enabled: Boolean, password: Boolean = false, onChange: (String) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(label, fontSize = 12.sp)
-        OutlinedTextField(
-            value = value, onValueChange = onChange, enabled = enabled, modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
-            singleLine = true, shape = RectangleShape,
-            textStyle = TextStyle(fontFamily = FontFamily.SansSerif, fontSize = 16.sp, color = Ink),
-            visualTransformation = if (password) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = if (password) KeyboardType.Password else KeyboardType.Text),
-            colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = Ink, unfocusedBorderColor = Ink, focusedContainerColor = Paper, unfocusedContainerColor = Paper),
-            supportingText = if (password) ({ Text("От 12 до 128 символов", fontSize = 11.sp) }) else null
-        )
-    }
 }
 
 @Composable

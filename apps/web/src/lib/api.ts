@@ -119,6 +119,11 @@ function parseUser(value: unknown): User {
   return value;
 }
 
+function parseInvite(value: unknown): Invite {
+  if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
+  return { token: value.token, url: value.url, expires_at: value.expires_at };
+}
+
 export const api = {
   async setupStatus(): Promise<boolean> {
     const value = await send('/api/setup/status');
@@ -201,16 +206,14 @@ export const api = {
   },
   async createAccountInvite(role: 'tracker' | 'partner'): Promise<Invite> {
     const value = await authenticated('/api/admin/invites', { method: 'POST', body: JSON.stringify({ role }) });
-    if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
-    return { token: value.token, url: value.url, expires_at: value.expires_at };
+    return parseInvite(value);
   },
   async revokeAccountInvite(role: 'tracker' | 'partner'): Promise<void> {
     await authenticated('/api/admin/invites/' + role, { method: 'DELETE' });
   },
   async createInvite(): Promise<Invite> {
     const value = await authenticated('/api/me/invite', { method: 'POST', body: '{}' });
-    if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
-    return { token: value.token, url: value.url, expires_at: value.expires_at };
+    return parseInvite(value);
   },
   async revokeInvite(): Promise<void> {
     await authenticated('/api/me/invite', { method: 'DELETE' });

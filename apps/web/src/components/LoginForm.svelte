@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasswordField from "./PasswordField.svelte";
   import { api, errorMessage } from '../lib/api';
   import type { User } from '../lib/types';
 
@@ -31,10 +32,7 @@
       <label for="login-username">Логин</label>
       <input id="login-username" name="username" bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" required maxlength="64" placeholder="your.login" />
     </div>
-    <div class="field">
-      <label for="login-password">Пароль</label>
-      <input id="login-password" name="password" type="password" bind:value={password} autocomplete="current-password" required maxlength="128" />
-    </div>
+    <PasswordField label="Пароль" id="login-password" name="password"  bind:value={password} autocomplete="current-password" required maxlength={128} />
     {#if error}<p class="feedback error" role="alert">{error}</p>{/if}
     <div class="actions">
       <button type="submit">{submitting ? 'Входим…' : 'Войти'}</button>

@@ -1,88 +1,10 @@
 package org.opensourceflo.app
 
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
-import java.util.concurrent.ScheduledThreadPoolExecutor
-import java.util.concurrent.ThreadFactory
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
 import org.json.JSONObject
-
-enum class AccountRole(val wire: String, val label: String) {
-    ADMIN("admin", "Администратор"), TRACKER("tracker", "Владелец дневника"), PARTNER("partner", "Партнёр");
-    companion object {
-        fun parse(value: String): AccountRole = entries.firstOrNull { it.wire == value } ?: throw ApiFailure("invalid_response")
-    }
-}
-data class Account(val id: String, val username: String, val displayName: String, val role: AccountRole, val active: Boolean)
-data class AccountPair(val id: String, val tracker: Account, val partner: Account, val createdAt: String)
-class ApiFailure(val code: String) : Exception(code)
-internal class NativeSession(val user: Account, val access: String, val refresh: String)
-internal data class ApiResponse(val status: Int, val body: String)
-internal fun interface ApiTransport {
-    suspend fun send(method: String, path: String, bearer: String?, body: String?): ApiResponse
-}
-
-internal class HttpApiTransport(private val baseUrl: String = BuildConfig.API_BASE_URL) : ApiTransport {
-    companion object {
-        private val deadlines = ScheduledThreadPoolExecutor(1, ThreadFactory { task ->
-            Thread(task, "flo-http-deadline").apply { isDaemon = true }
-        }).apply { removeOnCancelPolicy = true }
-    }
-    override suspend fun send(method: String, path: String, bearer: String?, body: String?): ApiResponse = withContext(Dispatchers.IO) {
-        val connection = URL("${baseUrl.trimEnd('/')}$path").openConnection() as HttpURLConnection
-        val deadline = System.nanoTime() + 15_000_000_000L
-        val timeout = deadlines.schedule({ connection.disconnect() }, 15, TimeUnit.SECONDS)
-        try {
-            connection.requestMethod = method
-            connection.instanceFollowRedirects = false
-            connection.useCaches = false
-            connection.connectTimeout = 8_000
-            connection.readTimeout = 8_000
-            connection.setRequestProperty("Accept", "application/json")
-            if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")
-            if (body != null) {
-                val bytes = body.toByteArray(Charsets.UTF_8)
-                connection.doOutput = true
-                connection.setRequestProperty("Content-Type", "application/json")
-                connection.setFixedLengthStreamingMode(bytes.size)
-                connection.outputStream.use { it.write(bytes) }
-            }
-            currentCoroutineContext().ensureActive()
-            val status = connection.responseCode
-            val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-            val text = stream?.bufferedReader(Charsets.UTF_8)?.use { reader ->
-                val result = StringBuilder()
-                val buffer = CharArray(4096)
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    if (System.nanoTime() > deadline) throw IOException("Request deadline")
-                    val count = reader.read(buffer)
-                    if (count < 0) break
-                    if (result.length + count > 1_048_576) throw IOException("Response size limit")
-                    result.append(buffer, 0, count)
-                }
-                result.toString()
-            }.orEmpty()
-            ApiResponse(status, text)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: IOException) {
-            throw ApiFailure("network_error")
-        } finally {
-            timeout.cancel(false)
-            connection.disconnect()
-        }
-    }
-}
 
 class AuthRepository internal constructor(private val transport: ApiTransport) {
     constructor() : this(HttpApiTransport())

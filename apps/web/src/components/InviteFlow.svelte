@@ -1,4 +1,5 @@
 <script lang="ts">
+  import PasswordField from "./PasswordField.svelte";
   import { onMount } from 'svelte';
   import LoginForm from './LoginForm.svelte';
   import { api, errorMessage } from '../lib/api';
@@ -124,8 +125,8 @@
         <fieldset disabled={locked}>
           <div class="field"><label for="invite-username">Логин</label><input id="invite-username" bind:value={username} autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="64" pattern={usernamePattern} /></div>
           <div class="field"><label for="invite-display-name">Отображаемое имя</label><input id="invite-display-name" bind:value={displayName} autocomplete="name" required maxlength="80" /></div>
-          <div class="field"><label for="invite-password">Пароль</label><input id="invite-password" type="password" bind:value={password} autocomplete="new-password" required minlength="12" maxlength="128" /></div>
-          <div class="field"><label for="invite-confirm-password">Повторите пароль</label><input id="invite-confirm-password" type="password" bind:value={confirmation} autocomplete="new-password" required minlength="12" maxlength="128" /></div>
+          <PasswordField label="Пароль" id="invite-password"  bind:value={password} autocomplete="new-password" required minlength={12} maxlength={128} />
+          <PasswordField label="Повторите пароль" id="invite-confirm-password"  bind:value={confirmation} autocomplete="new-password" required minlength={12} maxlength={128} />
           <p class="field-hint">Роль нового аккаунта — «{roleNames[preview.role ?? "partner"]}». Пароль: 12–128 символов.</p>
           <label class="checkbox-field"><input type="checkbox" bind:checked={consent} required /><span>{preview.kind === "account" ? "Подтверждаю создание аккаунта без пары." : "Я хочу создать аккаунт партнёра и связать его с " + preview.tracker_display_name + "."}</span></label>
           <button type="submit" disabled={!consent}>{busy ? 'Создаём аккаунт…' : preview.kind === 'account' ? 'Создать аккаунт' : 'Создать аккаунт и принять приглашение'}</button>
