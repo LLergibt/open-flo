@@ -1,0 +1,14 @@
+.git
+.data
+.tooling
+**/target
+**/node_modules
+**/dist
+**/build
+**/.gradle
+.env
+.env.*
+**/local.properties
+**/*.jks
+**/*.keystore
+artifacts/

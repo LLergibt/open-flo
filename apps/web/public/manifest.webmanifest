@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "open-source-flo",
+  "short_name": "flo / local",
+  "description": "Тестовый экран подключения к своему серверу.",
+  "lang": "ru",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8e8d8",
+  "theme_color": "#f5d0b0"
+}

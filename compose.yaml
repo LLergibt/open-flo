@@ -1,0 +1,23 @@
+name: open-source-flo
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      DATABASE_URL: sqlite:///data/flo.db
+    volumes:
+      - flo-data:/data
+    restart: unless-stopped
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    ports:
+      - "127.0.0.1:8088:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+volumes:
+  flo-data:

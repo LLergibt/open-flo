@@ -1,0 +1,15 @@
+FROM rust:1.91.1-bookworm AS build
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY crates ./crates
+RUN cargo build --locked --release -p flo-api
+
+FROM debian:bookworm-slim
+RUN useradd --system --uid 10001 --create-home flo \
+    && mkdir /data \
+    && chown flo:flo /data
+COPY --from=build /app/target/release/flo-api /usr/local/bin/flo-api
+USER flo
+ENV BIND_ADDR=0.0.0.0:8080 DATABASE_URL=sqlite:///data/flo.db
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/flo-api"]
