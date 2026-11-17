@@ -3,6 +3,7 @@
   import AdminPanel from './components/AdminPanel.svelte';
   import LoginForm from './components/LoginForm.svelte';
   import MemberPanel from './components/MemberPanel.svelte';
+  import DeleteAccount from './components/DeleteAccount.svelte';
   import PasswordForm from './components/PasswordForm.svelte';
   import InviteFlow from './components/InviteFlow.svelte';
   import { consumeInviteFragment } from './lib/invites';
@@ -164,6 +165,7 @@
           {#key user.id}<MemberPanel {user} disabled={loggingOut} />{/key}
         {/if}
         <PasswordForm disabled={loggingOut} onchanged={() => signedOut('Пароль изменён. Все ваши сессии завершены. Войдите заново с новым паролем.')} />
+        <DeleteAccount disabled={loggingOut} onremoved={() => { pendingInvite = null; signedOut('Аккаунт удалён.'); }} />
       {:else}
         <h1 id="screen-title">Вход в аккаунт</h1>
         <p class="intro">Введите логин и пароль, которые выдал администратор вашего сервера.</p>

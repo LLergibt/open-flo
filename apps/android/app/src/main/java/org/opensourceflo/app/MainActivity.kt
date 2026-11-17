@@ -81,6 +81,7 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                         RetroWindow("invite.exe", "Приглашение партнёра") { JoinInviteScreen(state, model) }
                     }
                     if (state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
+                    if (state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
                     Text(
                         "Токены хранятся только в памяти. После перезапуска приложения потребуется войти снова.",
                         modifier = Modifier.widthIn(max = 470.dp), fontSize = 11.sp, lineHeight = 18.7.sp

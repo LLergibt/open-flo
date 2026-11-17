@@ -157,3 +157,21 @@ private fun InviteRegistrationForm(state: AuthState, model: AuthViewModel) {
         }
     }
 }
+
+
+@Composable
+internal fun DeleteAccountScreen(state: AuthState, model: AuthViewModel) {
+    var open by remember { mutableStateOf(false) }
+    var password by remember { mutableStateOf("") }
+    Notice(state)
+    if (!open) {
+        RetroButton("Удалить мой аккаунт", enabled = !state.busy, secondary = true) { open = true }
+    } else {
+        BodyText("Аккаунт будет удалён навсегда вместе с сессиями, приглашениями и парой. Аккаунт партнёра сохранится. Последнего активного администратора удалить нельзя.")
+        RetroField("Текущий пароль", password, !state.busy, password = true) { password = it }
+        RetroButton("Да, удалить аккаунт навсегда", enabled = !state.busy && password.isNotEmpty()) {
+            val value = password; password = ""; model.deleteSelf(value)
+        }
+        RetroButton("Отмена", enabled = !state.busy, secondary = true) { password = ""; open = false }
+    }
+}

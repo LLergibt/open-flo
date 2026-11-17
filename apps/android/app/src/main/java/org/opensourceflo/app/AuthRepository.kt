@@ -178,6 +178,11 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
     )))
     suspend fun unlinkPair(id: String) { expect(protected("DELETE", "/api/admin/pairs/${safeId(id)}"), 204) }
 
+    suspend fun deleteSelf(password: String) {
+        expect(protected("DELETE", "/api/me", JSONObject().put("current_password", password)), 204)
+        clearSession()
+    }
+    suspend fun deleteUser(id: String) { expect(protected("DELETE", "/api/admin/users/${safeId(id)}"), 204) }
     suspend fun changeOwnPassword(currentPassword: String, newPassword: String) {
         expect(protected("POST", "/api/me/password", JSONObject().put("current_password", currentPassword).put("new_password", newPassword)), 204)
         clearSession()

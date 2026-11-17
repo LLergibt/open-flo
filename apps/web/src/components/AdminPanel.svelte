@@ -26,6 +26,7 @@
   let resetId = $state<string | null>(null);
   let resetPassword = $state('');
   let confirmUserId = $state<string | null>(null);
+  let deleteId = $state<string | null>(null);
   let confirmPairId = $state<string | null>(null);
   const usernamePattern = '[a-z0-9_.\\-]{3,64}';
 
@@ -115,6 +116,14 @@
     } finally {
       busy = '';
     }
+  }
+
+  async function deleteAccount(account: User) {
+    if (locked) return;
+    busy = 'delete-' + account.id; error = ''; notice = '';
+    try { await api.deleteUser(account.id); deleteId = null; notice = 'Аккаунт удалён.'; await reload(); }
+    catch (failure) { error = errorMessage(failure); }
+    finally { busy = ''; }
   }
 
   async function createPair(event: SubmitEvent) {
@@ -216,6 +225,12 @@
                 <button class="secondary small" type="button" disabled={locked || account.id === user.id} onclick={() => { confirmUserId = account.id; resetId = null; resetPassword = ''; }} aria-label={`${account.is_active ? 'Отключить' : 'Включить'} аккаунт ${account.username}`}>{account.is_active ? 'Отключить' : 'Включить'}</button>
                 <button class="secondary small" type="button" disabled={locked} onclick={() => { resetId = resetId === account.id ? null : account.id; resetPassword = ''; confirmUserId = null; }} aria-expanded={resetId === account.id} aria-label={`Сменить пароль аккаунта ${account.username}`}>Сменить пароль</button>
               </div>
+              {#if account.id !== user.id}
+                <button class="secondary small spaced" type="button" disabled={locked} onclick={() => { deleteId = account.id; }}>Удалить аккаунт</button>
+                {#if deleteId === account.id}
+                  <div class="confirmation"><p>Удалить @{account.username} навсегда? Сессии и пара будут удалены; аккаунт партнёра сохранится.</p><div class="actions compact"><button type="button" disabled={locked} onclick={() => void deleteAccount(account)}>Да, удалить навсегда</button><button class="secondary" type="button" disabled={locked} onclick={() => { deleteId = null; }}>Отмена</button></div></div>
+                {/if}
+              {/if}
               {#if confirmUserId === account.id}
                 <div class="confirmation">
                   <p>{account.is_active ? `Отключить @${account.username}? Его действующие сессии будут отозваны.` : `Включить @${account.username}? Пользователь снова сможет войти.`}</p>

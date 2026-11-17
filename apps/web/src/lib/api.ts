@@ -150,6 +150,13 @@ export const api = {
       signingOut = false;
     }
   },
+  async deleteSelf(currentPassword: string): Promise<void> {
+    await authenticated('/api/me', { method: 'DELETE', body: JSON.stringify({ current_password: currentPassword }) });
+    authEpoch += 1;
+  },
+  async deleteUser(id: string): Promise<void> {
+    await authenticated('/api/admin/users/' + encodeURIComponent(id), { method: 'DELETE' });
+  },
   async users(): Promise<User[]> {
     const value = await authenticated('/api/admin/users');
     if (!isRecord(value) || !Array.isArray(value.users) || !value.users.every(isUser)) throw new ApiError('invalid_response');

@@ -409,3 +409,148 @@ async fn failed_registration_keeps_invite_and_cookie_mutations_require_origin() 
     assert_eq!(f.request("POST","/api/invites/register",Some(json!({"token":token,"username":"partner_new","display_name":"Partner","password":PASSWORD,"client":"web"})),&[("origin","https://evil.example")]).await.0,StatusCode::FORBIDDEN);
     assert_eq!(preview(&f, &token).await, StatusCode::OK);
 }
+
+#[tokio::test]
+async fn account_deletion_checks_permissions_password_and_cascades() {
+    let f = Fixture::new().await;
+    let admin = f.admin().await;
+    let a = admin["access_token"].as_str().unwrap();
+    let owner = f.create(a, "delete_owner", "tracker").await;
+    let partner = f.create(a, "delete_partner", "partner").await;
+    let login = f.login("delete_owner", PASSWORD).await;
+    let bearer = format!("Bearer {}", login["access_token"].as_str().unwrap());
+    let target = format!("/api/admin/users/{}", partner["id"].as_str().unwrap());
+    assert_eq!(
+        f.request("DELETE", &target, None, &[("authorization", &bearer)])
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        f.request(
+            "DELETE",
+            "/api/me",
+            Some(json!({"current_password":"wrong"})),
+            &[("authorization", &bearer)]
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        f.request("GET", "/api/me", None, &[("authorization", &bearer)])
+            .await
+            .0,
+        StatusCode::OK
+    );
+    let admin_bearer = format!("Bearer {a}");
+    assert_eq!(
+        f.request(
+            "POST",
+            "/api/admin/pairs",
+            Some(json!({"tracker_id":owner["id"],"partner_id":partner["id"]})),
+            &[("authorization", &admin_bearer)]
+        )
+        .await
+        .0,
+        StatusCode::CREATED
+    );
+    assert_eq!(
+        f.request(
+            "DELETE",
+            "/api/me",
+            Some(json!({"current_password":PASSWORD})),
+            &[("authorization", &bearer)]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        f.request("GET", "/api/me", None, &[("authorization", &bearer)])
+            .await
+            .0,
+        StatusCode::UNAUTHORIZED
+    );
+    assert_eq!(
+        f.request(
+            "POST",
+            "/api/auth/refresh",
+            Some(json!({"refresh_token":login["refresh_token"],"client":"native"})),
+            &[]
+        )
+        .await
+        .0,
+        StatusCode::UNAUTHORIZED
+    );
+    for table in ["pairs", "sessions", "refresh_tokens"] {
+        // The administrator still has its own session and refresh token.
+        let expected = if table == "pairs" { 0 } else { 1 };
+        assert_eq!(
+            sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(&f.pool)
+                .await
+                .unwrap(),
+            expected
+        );
+    }
+    assert_eq!(
+        f.request("DELETE", &target, None, &[("authorization", &admin_bearer)])
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        f.request(
+            "DELETE",
+            "/api/me",
+            Some(json!({"current_password":PASSWORD})),
+            &[("authorization", &admin_bearer)]
+        )
+        .await
+        .0,
+        StatusCode::CONFLICT
+    );
+}
+
+#[tokio::test]
+async fn deleting_owner_revokes_pending_invite_and_admin_can_delete_self_with_successor() {
+    let f = Fixture::new().await;
+    let admin = f.admin().await;
+    let a = admin["access_token"].as_str().unwrap();
+    let owner = f.create(a, "gone_owner", "tracker").await;
+    let login = f.login("gone_owner", PASSWORD).await;
+    let token = invitation(&f, login["access_token"].as_str().unwrap()).await["token"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let auth = format!("Bearer {a}");
+    let route = format!("/api/admin/users/{}", owner["id"].as_str().unwrap());
+    assert_eq!(
+        f.request("DELETE", &route, None, &[("authorization", &auth)])
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(preview(&f, &token).await, StatusCode::NOT_FOUND);
+    f.create(a, "successor", "admin").await;
+    assert_eq!(
+        f.request(
+            "DELETE",
+            "/api/me",
+            Some(json!({"current_password":PASSWORD})),
+            &[("authorization", &auth)]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    f.login("successor", PASSWORD).await;
+}

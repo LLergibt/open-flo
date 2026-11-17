@@ -119,6 +119,7 @@ private fun CreateUserForm(state: AuthState, model: AuthViewModel) {
 @Composable
 private fun UserCard(user: Account, state: AuthState, model: AuthViewModel) {
     var resetOpen by remember { mutableStateOf(false) }
+    var deleteOpen by remember { mutableStateOf(false) }
     var deactivateOpen by remember { mutableStateOf(false) }
     var password by remember { mutableStateOf("") }
     val own = user.id == state.user?.id
@@ -135,6 +136,13 @@ private fun UserCard(user: Account, state: AuthState, model: AuthViewModel) {
                 if (user.active) deactivateOpen = true else model.setActive(user, true)
             }
         } else BodyText("Ваш текущий аккаунт нельзя отключить здесь.")
+        if (!own) {
+            if (deleteOpen) {
+                BodyText("Удалить аккаунт навсегда? Сессии и пара будут удалены, аккаунт партнёра сохранится.")
+                RetroButton("Да, удалить навсегда", enabled = !state.busy) { deleteOpen = false; model.deleteUser(user) }
+                RetroButton("Отмена", enabled = !state.busy, secondary = true) { deleteOpen = false }
+            } else RetroButton("Удалить аккаунт", enabled = !state.busy, secondary = true) { deleteOpen = true }
+        }
         if (resetOpen) {
             RetroField("Новый пароль", password, !state.busy, password = true) { password = it }
             BodyText("Смена пароля завершит все сессии этого аккаунта.")

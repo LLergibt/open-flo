@@ -48,3 +48,5 @@ Web: HttpOnly cookies flo_access и flo_refresh, SameSite=Strict, Path=/api. Sec
 Успех входа, неверный пароль, неизвестный user, истёкший/поддельный JWT, refresh/replay/logout, отключённый user, обход admin role, перечисление чужих пар, self/wrong-role/duplicate pair, атомарность создания, отзыв связи. Web login→admin create accounts→pair→logout→member login→own pair→unlink. Android компиляция и unit/static checks без телефона. Продакшен с паролями требует HTTPS; пароль/refresh не выводить в логи и отчёты.
 
 Дополнение: [приглашения и смена пароля](INVITES_CONTRACT.md).
+
+Удаление: DELETE /api/me с JSON {current_password} — 204 с очисткой cookies; неверный пароль — 401 invalid_credentials без завершения сессии. DELETE /api/admin/users/{id} — 204, только для администратора и чужого аккаунта. Последний активный admin защищён (409). Удаление аккаунта, пары, сессий, refresh-токенов и приглашения атомарно; аккаунт партнёра остаётся.

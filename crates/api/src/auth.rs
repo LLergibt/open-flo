@@ -1,3 +1,4 @@
+mod deletion;
 mod invites;
 use std::{
     collections::{HashMap, VecDeque},
@@ -324,7 +325,7 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
         .route("/api/auth/login", post(login))
         .route("/api/auth/refresh", post(refresh))
         .route("/api/auth/logout", post(logout))
-        .route("/api/me", get(me))
+        .route("/api/me", get(me).delete(deletion::own))
         .route("/api/me/password", post(invites::password))
         .route(
             "/api/me/invite",
@@ -335,7 +336,10 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
         .route("/api/invites/register", post(invites::register))
         .route("/api/me/pair", get(my_pair).delete(unlink_my_pair))
         .route("/api/admin/users", get(users).post(create_user))
-        .route("/api/admin/users/{id}", axum::routing::patch(patch_user))
+        .route(
+            "/api/admin/users/{id}",
+            axum::routing::patch(patch_user).delete(deletion::admin),
+        )
         .route("/api/admin/pairs", get(pairs).post(create_pair))
         .route("/api/admin/pairs/{id}", delete(unlink_pair))
         .route("/api/setup/status", get(setup_status))

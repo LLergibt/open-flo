@@ -100,6 +100,18 @@ class AuthViewModel : ViewModel() {
         mutableState.value = mutableState.value.copy(notice = "Связь прекращена.")
     }
 
+    fun deleteUser(user: Account) = adminAction {
+        repository.deleteUser(user.id)
+        mutableState.value = mutableState.value.copy(notice = "Аккаунт удалён.")
+    }
+    fun deleteSelf(password: String) = runAction {
+        try { repository.deleteSelf(password) }
+        catch (failure: ApiFailure) {
+            if (failure.code == "invalid_credentials") throw ApiFailure("current_password_incorrect")
+            throw failure
+        }
+        mutableState.value = AuthState(busy = true, notice = "Аккаунт удалён.")
+    }
     fun changeOwnPassword(current: String, newPassword: String) = runAction {
         try { repository.changeOwnPassword(current, newPassword) }
         catch (failure: ApiFailure) {
