@@ -3,12 +3,12 @@ package org.opensourceflo.app
 import java.net.URI
 import java.util.Locale
 
-data class InvitePreview(val trackerDisplayName: String, val expiresAt: String)
+data class InvitePreview(val trackerDisplayName: String, val expiresAt: String, val kind: String = "pair", val role: AccountRole = AccountRole.PARTNER)
 class PendingInvitation internal constructor(internal val token: String, val preview: InvitePreview)
-class GeneratedInvitation(val token: String, val url: String?, val expiresAt: String) {
+class GeneratedInvitation(val token: String, val url: String?, val expiresAt: String, val role: String? = null) {
     val shareValue: String get() = url ?: token
 }
-data class InviteRegistration(val user: Account, val pair: AccountPair)
+data class InviteRegistration(val user: Account, val pair: AccountPair?)
 
 internal object InviteInput {
     private val tokenPattern = Regex("[a-fA-F0-9]{64}")

@@ -50,20 +50,25 @@ fn expiry(value: i64) -> Result<String, AuthError> {
 struct Invitation {
     tracker_id: String,
     expires_at: i64,
+    kind: String,
+    role: String,
 }
 async fn invitation(
     tx: &mut Transaction<'_, Sqlite>,
     token: &str,
 ) -> Result<Invitation, AuthError> {
     let hash = token_hash(token).map_err(|_| unavailable())?;
-    sqlx::query_as::<_,Invitation>("SELECT i.tracker_id,i.expires_at FROM partner_invites i JOIN users u ON u.id=i.tracker_id WHERE i.token_hash=? AND i.expires_at>? AND u.is_active=1 AND u.role='tracker' AND NOT EXISTS(SELECT 1 FROM pairs WHERE tracker_id=u.id)")
-        .bind(hash).bind(now()).fetch_optional(&mut **tx).await.map_err(|_|AuthError::internal())?.ok_or_else(unavailable)
+    sqlx::query_as::<_,Invitation>("SELECT i.tracker_id,i.expires_at,'pair' AS kind,'partner' AS role FROM partner_invites i JOIN users u ON u.id=i.tracker_id WHERE i.token_hash=? AND i.expires_at>? AND u.is_active=1 AND u.role='tracker' AND NOT EXISTS(SELECT 1 FROM pairs WHERE tracker_id=u.id) UNION ALL SELECT i.admin_id AS tracker_id,i.expires_at,'account' AS kind,i.role FROM account_invites i JOIN users u ON u.id=i.admin_id WHERE i.token_hash=? AND i.expires_at>? AND u.is_active=1 AND u.role='admin'")
+        .bind(&hash).bind(now()).bind(&hash).bind(now()).fetch_optional(&mut **tx).await.map_err(|_|AuthError::internal())?.ok_or_else(unavailable)
 }
 async fn attach(
     tx: &mut Transaction<'_, Sqlite>,
     invite: Invitation,
     partner: &User,
 ) -> Result<Pair, AuthError> {
+    if invite.kind != "pair" {
+        return Err(unavailable());
+    }
     let tracker = sqlx::query_as::<_, UserRecord>("SELECT * FROM users WHERE id=?")
         .bind(&invite.tracker_id)
         .fetch_one(&mut **tx)
@@ -172,7 +177,7 @@ pub(super) async fn preview(
         .await
         .map_err(|_| AuthError::internal())?;
     Ok(Json(
-        serde_json::json!({"tracker_display_name":name,"expires_at":expiry(invite.expires_at)?}),
+        serde_json::json!({"tracker_display_name":name,"expires_at":expiry(invite.expires_at)?,"kind":invite.kind,"role":invite.role}),
     ))
 }
 pub(super) async fn accept(
@@ -224,11 +229,20 @@ pub(super) async fn register(
         id: Uuid::new_v4().to_string(),
         username,
         display_name: name,
-        role: "partner".into(),
+        role: invite.role.clone(),
         is_active: true,
     };
     insert_user(&mut tx, &user, &hash).await?;
-    let pair = attach(&mut tx, invite, &user).await?;
+    let pair = if invite.kind == "pair" {
+        Some(attach(&mut tx, invite, &user).await?)
+    } else {
+        sqlx::query("DELETE FROM account_invites WHERE token_hash=?")
+            .bind(token_digest)
+            .execute(&mut *tx)
+            .await
+            .map_err(|_| AuthError::internal())?;
+        None
+    };
     tx.commit().await.map_err(conflict_or_internal)?;
     Ok((
         StatusCode::CREATED,
@@ -278,4 +292,69 @@ pub(super) async fn password(
     append_cookie(&mut response, &state.config, "flo_access", "", 0);
     append_cookie(&mut response, &state.config, "flo_refresh", "", 0);
     Ok(response)
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct AccountInviteInput {
+    role: String,
+}
+
+pub(super) async fn create_account(
+    State(state): State<AuthState>,
+    headers: HeaderMap,
+    ApiJson(input): ApiJson<AccountInviteInput>,
+) -> Result<Response, AuthError> {
+    let actor = authenticate(&headers, &state).await?;
+    require_admin(&actor)?;
+    check_origin(&headers, &state.config, false)?;
+    if !["tracker", "partner"].contains(&input.role.as_str()) {
+        return Err(AuthError::invalid());
+    }
+    limited(&state, &format!("account-invite:{}", actor.user.id))?;
+    let mut tx = actor_transaction(&state, &actor, true).await?;
+    let token = random_token();
+    let expires = now() + 24 * 60 * 60;
+    sqlx::query("DELETE FROM account_invites WHERE admin_id=? AND role=?")
+        .bind(&actor.user.id)
+        .bind(&input.role)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AuthError::internal())?;
+    sqlx::query("INSERT INTO account_invites(token_hash,admin_id,role,expires_at) VALUES(?,?,?,?)")
+        .bind(token_hash(&token)?)
+        .bind(&actor.user.id)
+        .bind(&input.role)
+        .bind(expires)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AuthError::internal())?;
+    tx.commit().await.map_err(|_| AuthError::internal())?;
+    let url = state
+        .config
+        .public_app_url
+        .as_ref()
+        .map(|base| format!("{base}/#invite={token}"));
+    Ok((StatusCode::CREATED,Json(serde_json::json!({"token":token,"url":url,"expires_at":expiry(expires)?,"role":input.role}))).into_response())
+}
+pub(super) async fn revoke_account(
+    State(state): State<AuthState>,
+    headers: HeaderMap,
+    Path(role): Path<String>,
+) -> Result<StatusCode, AuthError> {
+    let actor = authenticate(&headers, &state).await?;
+    require_admin(&actor)?;
+    check_origin(&headers, &state.config, false)?;
+    if !["tracker", "partner"].contains(&role.as_str()) {
+        return Err(AuthError::invalid());
+    }
+    let mut tx = actor_transaction(&state, &actor, true).await?;
+    sqlx::query("DELETE FROM account_invites WHERE admin_id=? AND role=?")
+        .bind(&actor.user.id)
+        .bind(role)
+        .execute(&mut *tx)
+        .await
+        .map_err(|_| AuthError::internal())?;
+    tx.commit().await.map_err(|_| AuthError::internal())?;
+    Ok(StatusCode::NO_CONTENT)
 }

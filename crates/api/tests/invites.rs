@@ -554,3 +554,168 @@ async fn deleting_owner_revokes_pending_invite_and_admin_can_delete_self_with_su
     );
     f.login("successor", PASSWORD).await;
 }
+
+#[tokio::test]
+async fn admin_registration_links_fix_role_without_pair_and_are_single_use() {
+    let f = Fixture::new().await;
+    let admin = f.admin().await;
+    let auth = format!("Bearer {}", admin["access_token"].as_str().unwrap());
+    assert_eq!(
+        f.request(
+            "POST",
+            "/api/admin/invites",
+            Some(json!({"role":"admin"})),
+            &[("authorization", &auth)]
+        )
+        .await
+        .0,
+        StatusCode::BAD_REQUEST
+    );
+    for role in ["tracker", "partner"] {
+        let (status, _, link) = f
+            .request(
+                "POST",
+                "/api/admin/invites",
+                Some(json!({"role":role})),
+                &[("authorization", &auth)],
+            )
+            .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let token = link["token"].as_str().unwrap();
+        let (_, _, info) = f
+            .request(
+                "POST",
+                "/api/invites/preview",
+                Some(json!({"token":token})),
+                &[],
+            )
+            .await;
+        assert_eq!(info["kind"], "account");
+        assert_eq!(info["role"], role);
+        let body = json!({"token":token,"username":format!("invited_{role}"),"display_name":"New account","password":PASSWORD,"client":"native"});
+        let mut bad = body.clone();
+        bad["role"] = json!("admin");
+        assert_eq!(
+            f.request("POST", "/api/invites/register", Some(bad), &[])
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+        let (one, two) = tokio::join!(
+            f.request("POST", "/api/invites/register", Some(body.clone()), &[]),
+            f.request("POST", "/api/invites/register", Some(body), &[])
+        );
+        let mut statuses = [one.0.as_u16(), two.0.as_u16()];
+        statuses.sort();
+        assert_eq!(statuses, [201, 404]);
+        let result = if one.0 == StatusCode::CREATED {
+            one.2
+        } else {
+            two.2
+        };
+        assert_eq!(result["user"]["role"], role);
+        assert!(result["pair"].is_null());
+        assert_eq!(preview(&f, token).await, StatusCode::NOT_FOUND);
+        let login = f.login(&format!("invited_{role}"), PASSWORD).await;
+        let bearer = format!("Bearer {}", login["access_token"].as_str().unwrap());
+        assert_eq!(
+            f.request(
+                "POST",
+                "/api/admin/invites",
+                Some(json!({"role":"tracker"})),
+                &[("authorization", &bearer)]
+            )
+            .await
+            .0,
+            StatusCode::FORBIDDEN
+        );
+    }
+    assert_eq!(
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM pairs")
+            .fetch_one(&f.pool)
+            .await
+            .unwrap(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn admin_invites_rotate_revoke_expire_and_cannot_be_used_for_pairing() {
+    let f = Fixture::new().await;
+    let admin = f.admin().await;
+    let auth = format!("Bearer {}", admin["access_token"].as_str().unwrap());
+    let (_, _, old) = f
+        .request(
+            "POST",
+            "/api/admin/invites",
+            Some(json!({"role":"tracker"})),
+            &[("authorization", &auth)],
+        )
+        .await;
+    let (_, _, new) = f
+        .request(
+            "POST",
+            "/api/admin/invites",
+            Some(json!({"role":"tracker"})),
+            &[("authorization", &auth)],
+        )
+        .await;
+    assert_eq!(
+        preview(&f, old["token"].as_str().unwrap()).await,
+        StatusCode::NOT_FOUND
+    );
+    f.create(
+        admin["access_token"].as_str().unwrap(),
+        "existing_partner",
+        "partner",
+    )
+    .await;
+    let login = f.login("existing_partner", PASSWORD).await;
+    let bearer = format!("Bearer {}", login["access_token"].as_str().unwrap());
+    assert_eq!(
+        f.request(
+            "POST",
+            "/api/me/invite/accept",
+            Some(json!({"token":new["token"]})),
+            &[("authorization", &bearer)]
+        )
+        .await
+        .0,
+        StatusCode::NOT_FOUND
+    );
+    assert_eq!(
+        preview(&f, new["token"].as_str().unwrap()).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        f.request(
+            "DELETE",
+            "/api/admin/invites/tracker",
+            None,
+            &[("authorization", &auth)]
+        )
+        .await
+        .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        preview(&f, new["token"].as_str().unwrap()).await,
+        StatusCode::NOT_FOUND
+    );
+    let (_, _, expired) = f
+        .request(
+            "POST",
+            "/api/admin/invites",
+            Some(json!({"role":"tracker"})),
+            &[("authorization", &auth)],
+        )
+        .await;
+    sqlx::query("UPDATE account_invites SET expires_at=0")
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        preview(&f, expired["token"].as_str().unwrap()).await,
+        StatusCode::NOT_FOUND
+    );
+}

@@ -98,7 +98,7 @@ class InvitationsTest {
         })
         val created = repository.registerInvite(token, "FIXTURE_PARTNER", "Fixture Partner", "fixture-password-123")
         assertEquals(AccountRole.PARTNER, created.user.role)
-        assertEquals(created.user.id, created.pair.partner.id)
+        assertEquals(created.user.id, created.pair!!.partner.id)
         failure("unauthorized") { repository.me() }
         assertEquals(1, calls)
     }
@@ -147,5 +147,24 @@ class InvitationsTest {
     @Test fun unavailableInviteUsesSafeErrorCode() = runBlocking {
         val repository = AuthRepository(ApiTransport { _, _, _, _ -> ApiResponse(404, """{"error":"invite_unavailable"}""") })
         failure("invite_unavailable") { repository.previewInvite(token) }
+    }
+
+    @Test fun administrativeInvitationRegistersTrackerWithoutPair() = runBlocking {
+        val repository = AuthRepository(ApiTransport { _, path, _, body ->
+            when (path) {
+                "/api/invites/preview" -> ApiResponse(200, """{"tracker_display_name":"Administrator","kind":"account","role":"tracker","expires_at":"2026-11-18T18:00:00Z"}""")
+                "/api/invites/register" -> {
+                    assertFalse(JSONObject(body!!).has("role"))
+                    ApiResponse(201, """{"user":$tracker,"pair":null}""")
+                }
+                else -> error("Unexpected route")
+            }
+        })
+        val preview = repository.previewInvite(token)
+        assertEquals("account", preview.kind)
+        assertEquals(AccountRole.TRACKER, preview.role)
+        val created = repository.registerInvite(token, "fixture_tracker", "Fixture", "fixture-password-123")
+        assertEquals(AccountRole.TRACKER, created.user.role)
+        assertNull(created.pair)
     }
 }

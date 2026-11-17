@@ -74,7 +74,7 @@
   function inviteAccepted(account: User) {
     pendingInvite = null;
     loggedIn(account);
-    notice = 'Приглашение принято. Аккаунты связаны.';
+    notice = 'Приглашение принято.';
   }
 
   function inviteRegistered(message: string) {

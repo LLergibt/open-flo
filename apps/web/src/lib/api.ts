@@ -199,6 +199,14 @@ export const api = {
     });
     authEpoch += 1;
   },
+  async createAccountInvite(role: 'tracker' | 'partner'): Promise<Invite> {
+    const value = await authenticated('/api/admin/invites', { method: 'POST', body: JSON.stringify({ role }) });
+    if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
+    return { token: value.token, url: value.url, expires_at: value.expires_at };
+  },
+  async revokeAccountInvite(role: 'tracker' | 'partner'): Promise<void> {
+    await authenticated('/api/admin/invites/' + role, { method: 'DELETE' });
+  },
   async createInvite(): Promise<Invite> {
     const value = await authenticated('/api/me/invite', { method: 'POST', body: '{}' });
     if (!isRecord(value) || typeof value.token !== 'string' || !(value.url === null || typeof value.url === 'string') || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
@@ -210,13 +218,15 @@ export const api = {
   async previewInvite(token: string): Promise<InvitePreview> {
     const value = await send('/api/invites/preview', { method: 'POST', body: JSON.stringify({ token }) });
     if (!isRecord(value) || typeof value.tracker_display_name !== 'string' || typeof value.expires_at !== 'string') throw new ApiError('invalid_response');
-    return { tracker_display_name: value.tracker_display_name, expires_at: value.expires_at };
+    if (value.kind !== undefined && !['pair', 'account'].includes(String(value.kind))) throw new ApiError('invalid_response');
+    if (value.role !== undefined && !['tracker', 'partner'].includes(String(value.role))) throw new ApiError('invalid_response');
+    return { tracker_display_name: value.tracker_display_name, expires_at: value.expires_at, kind: value.kind as 'pair' | 'account' | undefined, role: value.role as 'tracker' | 'partner' | undefined };
   },
   async registerInvite(input: { token: string; username: string; display_name: string; password: string }): Promise<InviteRegistration> {
     const value = await send('/api/invites/register', {
       method: 'POST', body: JSON.stringify({ token: input.token, username: input.username.trim().toLowerCase(), display_name: input.display_name.trim(), password: input.password, client: 'web' }),
     });
-    if (!isRecord(value) || !isUser(value.user) || value.user.role !== 'partner' || !isPair(value.pair)) throw new ApiError('invalid_response');
+    if (!isRecord(value) || !isUser(value.user) || !['tracker', 'partner'].includes(value.user.role) || !(value.pair === null || isPair(value.pair))) throw new ApiError('invalid_response');
     return { user: value.user, pair: value.pair };
   },
   async acceptInvite(token: string): Promise<Pair> {

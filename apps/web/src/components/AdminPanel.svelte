@@ -1,4 +1,5 @@
 <script lang="ts">
+  import OwnerInvitePanel from './OwnerInvitePanel.svelte';
   import { onMount } from 'svelte';
   import { api, errorMessage } from '../lib/api';
   import { roleNames } from '../lib/types';
@@ -195,6 +196,7 @@
     {#if !loaded}
       <p class="detail" role="status">{loading ? 'Загружаем аккаунты и пары…' : 'Данные пока не загружены. Нажмите «Обновить».'}</p>
     {:else if tab === 'users'}
+      <OwnerInvitePanel admin disabled={locked} />
       <section class="section-block" aria-labelledby="create-user-title">
         <h3 id="create-user-title">Новый аккаунт</h3>
         <form onsubmit={createUser} aria-label="Создать аккаунт">

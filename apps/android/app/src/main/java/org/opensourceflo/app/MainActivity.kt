@@ -74,6 +74,7 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                         RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
                         if (state.user?.role == AccountRole.ADMIN) RetroWindow("admin.exe", "Администрирование") { AdminScreen(state, model) }
                     }
+                    if (state.user?.role == AccountRole.ADMIN) RetroWindow("invites.exe", "Ссылки регистрации") { OwnerInviteScreen(state, model, admin = true) }
                     if (state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
                         RetroWindow("invite.exe", "Пригласить партнёра") { OwnerInviteScreen(state, model) }
                     }

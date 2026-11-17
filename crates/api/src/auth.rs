@@ -334,6 +334,8 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
         .route("/api/me/invite/accept", post(invites::accept))
         .route("/api/invites/preview", post(invites::preview))
         .route("/api/invites/register", post(invites::register))
+        .route("/api/admin/invites", post(invites::create_account))
+        .route("/api/admin/invites/{role}", delete(invites::revoke_account))
         .route("/api/me/pair", get(my_pair).delete(unlink_my_pair))
         .route("/api/admin/users", get(users).post(create_user))
         .route(

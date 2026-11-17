@@ -38,16 +38,18 @@ internal fun OwnPasswordScreen(state: AuthState, model: AuthViewModel) {
 }
 
 @Composable
-internal fun OwnerInviteScreen(state: AuthState, model: AuthViewModel) {
+internal fun OwnerInviteScreen(state: AuthState, model: AuthViewModel, admin: Boolean = false) {
     val context = LocalContext.current
     var feedback by remember { mutableStateOf<String?>(null) }
     Notice(state)
-    BodyText("Одноразовое приглашение действует 24 часа. Передайте его только выбранному партнёру. Новая ссылка отменяет предыдущую.")
+    if (admin) BodyText("Создание аккаунта без пары. Доступны только владелец дневника и партнёр; ссылка одноразовая, на 24 часа.")
+    else BodyText("Одноразовое приглашение действует 24 часа. Передайте его только выбранному партнёру. Новая ссылка отменяет предыдущую.")
     val invitation = state.generatedInvite
     if (invitation != null) RetroCard {
         Text(if (invitation.url == null) "КОД ПРИГЛАШЕНИЯ" else "ССЫЛКА ПРИГЛАШЕНИЯ", fontSize = 10.sp)
         SelectionContainer { Text(invitation.shareValue, fontSize = 13.sp, lineHeight = 20.sp) }
         BodyText("Действует до: ${invitation.expiresAt}")
+        invitation.role?.let { BodyText("Роль: $it. Без пары.") }
         if (invitation.url == null) BodyText("Адрес приложения настроит администратор. Партнёр может вставить этот код в приложении.")
         RetroButton(if (invitation.url == null) "Скопировать код" else "Скопировать ссылку", enabled = !state.busy, secondary = true) {
             feedback = try {
@@ -67,6 +69,13 @@ internal fun OwnerInviteScreen(state: AuthState, model: AuthViewModel) {
         }
     }
     feedback?.let { BodyText(it) }
+    if (admin) {
+        for (role in listOf(AccountRole.TRACKER, AccountRole.PARTNER)) {
+            RetroButton("Создать ссылку: ${role.label}", enabled = !state.busy) { model.generateInvite(role) }
+            RetroButton("Отозвать: ${role.label}", enabled = !state.busy, secondary = true) { model.revokeInvite(role) }
+        }
+        return
+    }
     RetroButton(if (invitation == null) "Создать приглашение" else "Создать новое приглашение", enabled = !state.busy) { feedback = null; model.generateInvite() }
     RetroButton("Отозвать приглашения", enabled = !state.busy, secondary = true) { feedback = null; model.revokeInvite() }
 }
@@ -78,7 +87,7 @@ internal fun JoinInviteScreen(state: AuthState, model: AuthViewModel) {
     Notice(state)
     val invitation = state.pendingInvite
     if (invitation == null) {
-        BodyText("Вставьте одноразовую ссылку или код от владельца дневника. Предпросмотр не создаёт аккаунт и не принимает приглашение.")
+        BodyText("Вставьте одноразовую ссылку или код от владельца дневника или администратора. Предпросмотр не создаёт аккаунт и не принимает приглашение.")
         RetroField("Ссылка или код приглашения", input, !state.busy) { input = it }
         RetroButton("Проверить приглашение", enabled = !state.busy && input.isNotBlank()) {
             val submitted = input
@@ -90,7 +99,8 @@ internal fun JoinInviteScreen(state: AuthState, model: AuthViewModel) {
     RetroCard {
         Text("Приглашает: ${invitation.preview.trackerDisplayName}", fontSize = 18.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold)
         BodyText("Действует до: ${invitation.preview.expiresAt}")
-        BodyText("Принятие свяжет аккаунты. Партнёр сможет просматривать данные, которыми делится владелец дневника. Связь можно прекратить.")
+        if (invitation.preview.kind == "account") BodyText("Создание аккаунта: ${invitation.preview.role.label}. Привязка к другому человеку не создаётся.")
+        else BodyText("Принятие свяжет аккаунты. Партнёр сможет просматривать данные, которыми делится владелец дневника. Связь можно прекратить.")
     }
     when {
         state.user == null -> {
@@ -98,11 +108,15 @@ internal fun JoinInviteScreen(state: AuthState, model: AuthViewModel) {
                 "register" -> InviteRegistrationForm(state, model)
                 "login" -> InviteLoginForm(state, model)
                 else -> {
-                    RetroButton("Создать аккаунт партнёра", enabled = !state.busy) { mode = "register" }
-                    RetroButton("У меня уже есть аккаунт", enabled = !state.busy, secondary = true) { mode = "login" }
+                    RetroButton("Создать аккаунт: ${invitation.preview.role.label}", enabled = !state.busy) { mode = "register" }
+                    if (invitation.preview.kind != "account") RetroButton("У меня уже есть аккаунт", enabled = !state.busy, secondary = true) { mode = "login" }
                 }
             }
             if (mode != "choose") RetroButton("Выбрать другой способ входа", enabled = !state.busy, secondary = true) { mode = "choose" }
+        }
+        invitation.preview.kind == "account" -> {
+            BodyText("Эта ссылка создаёт новый аккаунт и не меняет текущий.")
+            RetroButton("Выйти и создать аккаунт", enabled = !state.busy) { model.logout() }
         }
         state.user.role != AccountRole.PARTNER -> {
             BodyText("Приглашение предназначено аккаунту партнёра. Выйдите и войдите как партнёр или создайте новый аккаунт по приглашению.")
@@ -140,7 +154,8 @@ private fun InviteRegistrationForm(state: AuthState, model: AuthViewModel) {
     var password by remember { mutableStateOf("") }
     var confirm by remember { mutableStateOf("") }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        BodyText("Будет создан аккаунт партнёра и установлена связь с указанным владельцем дневника. Открытой регистрации нет.")
+        if (state.pendingInvite?.preview?.kind == "account") BodyText("Будет создан аккаунт: ${state.pendingInvite.preview.role.label}. Без пары.")
+        else BodyText("Будет создан аккаунт партнёра и установлена связь с указанным владельцем дневника. Открытой регистрации нет.")
         RetroField("Логин", username, !state.busy) { username = it }
         BodyText("3–64 символа: a–z, 0–9, точка, дефис и подчёркивание.")
         RetroField("Отображаемое имя", name, !state.busy) { name = it }

@@ -187,26 +187,29 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
         expect(protected("POST", "/api/me/password", JSONObject().put("current_password", currentPassword).put("new_password", newPassword)), 204)
         clearSession()
     }
-    suspend fun generateInvite(): GeneratedInvitation {
-        val value = json(expect(protected("POST", "/api/me/invite", JSONObject()), 201))
+    suspend fun generateInvite(role: AccountRole? = null): GeneratedInvitation {
+        val value = json(expect(protected("POST", if (role == null) "/api/me/invite" else "/api/admin/invites", if (role == null) JSONObject() else JSONObject().put("role", role.wire)), 201))
         val token = string(value, "token")
         if (InviteInput.parse(token) != token || !value.has("url")) throw ApiFailure("invalid_response")
         val url = if (value.isNull("url")) null else string(value, "url")
         if (url != null && InviteInput.parse(url) != token) throw ApiFailure("invalid_response")
-        return GeneratedInvitation(token, url, string(value, "expires_at"))
+        return GeneratedInvitation(token, url, string(value, "expires_at"), role?.label)
     }
-    suspend fun revokeInvite() { expect(protected("DELETE", "/api/me/invite"), 204) }
+    suspend fun revokeInvite(role: AccountRole? = null) { expect(protected("DELETE", if (role == null) "/api/me/invite" else "/api/admin/invites/${role.wire}"), 204) }
     suspend fun previewInvite(token: String): InvitePreview {
         val value = json(expect(transport.send("POST", "/api/invites/preview", null, JSONObject().put("token", token).toString()), 200))
-        return InvitePreview(string(value, "tracker_display_name"), string(value, "expires_at"))
+        val kind = value.optString("kind", "pair")
+        val role = when (value.optString("role", "partner")) { "tracker" -> AccountRole.TRACKER; "partner" -> AccountRole.PARTNER; else -> throw ApiFailure("invalid_response") }
+        if (kind !in setOf("pair", "account")) throw ApiFailure("invalid_response")
+        return InvitePreview(string(value, "tracker_display_name"), string(value, "expires_at"), kind, role)
     }
     suspend fun registerInvite(token: String, username: String, name: String, password: String): InviteRegistration {
         val body = JSONObject().put("token", token).put("username", username.trim().lowercase(Locale.ROOT))
             .put("display_name", name.trim()).put("password", password).put("client", "native")
         val value = json(expect(transport.send("POST", "/api/invites/register", null, body.toString()), 201))
         val user = account(value.getJSONObject("user"))
-        val pair = pair(value.getJSONObject("pair"))
-        if (user.role != AccountRole.PARTNER || pair.partner.id != user.id) throw ApiFailure("invalid_response")
+        val pair = if (value.isNull("pair")) null else pair(value.getJSONObject("pair"))
+        if (user.role == AccountRole.ADMIN || pair != null && pair.partner.id != user.id) throw ApiFailure("invalid_response")
         return InviteRegistration(user, pair)
     }
     suspend fun acceptInvite(token: String): AccountPair = pair(json(expect(

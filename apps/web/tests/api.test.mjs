@@ -177,3 +177,21 @@ test('own password update uses JSON current and new fields and accepts 204', asy
   };
   await api.changePassword('old-synthetic-password', 'new-synthetic-password');
 });
+
+
+test('administrative invitation creates an unpaired tracker and cannot accept an admin response', async () => {
+  globalThis.fetch = async (path, options) => {
+    if (path === '/api/admin/invites') {
+      assert.deepEqual(JSON.parse(options.body), { role: 'tracker' });
+      return json({ token: 'a'.repeat(64), url: null, expires_at: '2026-11-18T00:00:00Z' }, 201);
+    }
+    if (path === '/api/invites/preview') return json({ tracker_display_name: 'Admin', kind: 'account', role: 'tracker', expires_at: '2026-11-18T00:00:00Z' });
+    return json({ user: { ...user, role: 'tracker' }, pair: null }, 201);
+  };
+  const link = await api.createAccountInvite('tracker');
+  assert.equal((await api.previewInvite(link.token)).kind, 'account');
+  const input = { token: link.token, username: 'tracker', display_name: 'Tracker', password: 'synthetic-password' };
+  assert.equal((await api.registerInvite(input)).pair, null);
+  globalThis.fetch = async () => json({ user, pair: null }, 201);
+  await assert.rejects(api.registerInvite(input), (error) => error.code === 'invalid_response');
+});

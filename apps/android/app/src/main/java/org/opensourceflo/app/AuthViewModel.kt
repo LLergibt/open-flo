@@ -120,12 +120,12 @@ class AuthViewModel : ViewModel() {
         }
         mutableState.value = AuthState(busy = true, notice = "Пароль изменён. Войдите снова.", pendingInvite = mutableState.value.pendingInvite)
     }
-    fun generateInvite() = runAction {
-        if (mutableState.value.user?.role != AccountRole.TRACKER || mutableState.value.ownPair != null) throw ApiFailure("forbidden")
-        mutableState.value = mutableState.value.copy(generatedInvite = repository.generateInvite(), notice = "Приглашение создано. Передайте его только выбранному партнёру.")
+    fun generateInvite(role: AccountRole? = null) = runAction {
+        if (role == null && (mutableState.value.user?.role != AccountRole.TRACKER || mutableState.value.ownPair != null)) throw ApiFailure("forbidden")
+        mutableState.value = mutableState.value.copy(generatedInvite = repository.generateInvite(role), notice = "Приглашение создано. Передайте его только выбранному партнёру.")
     }
-    fun revokeInvite() = runAction {
-        repository.revokeInvite()
+    fun revokeInvite(role: AccountRole? = null) = runAction {
+        repository.revokeInvite(role)
         mutableState.value = mutableState.value.copy(generatedInvite = null, notice = "Приглашения отозваны.")
     }
     fun previewInvite(input: String) = runAction {
@@ -141,7 +141,7 @@ class AuthViewModel : ViewModel() {
         if (mutableState.value.user != null) throw ApiFailure("forbidden")
         val invitation = mutableState.value.pendingInvite ?: throw ApiFailure("invite_unavailable")
         repository.registerInvite(invitation.token, username, name, password)
-        mutableState.value = AuthState(busy = true, notice = "Аккаунт создан и связан. Если вход не завершится, войдите с новым паролем.")
+        mutableState.value = AuthState(busy = true, notice = "Аккаунт создан. Если вход не завершится, войдите с новым паролем.")
         val user = repository.login(username, password)
         mutableState.value = AuthState(user = user, busy = true, notice = "Аккаунт создан. Приглашение принято.")
         loadDashboard()

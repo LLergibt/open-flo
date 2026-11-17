@@ -22,13 +22,15 @@ export interface Invite {
 }
 
 export interface InvitePreview {
+  kind?: "pair" | "account";
+  role?: "tracker" | "partner";
   tracker_display_name: string;
   expires_at: string;
 }
 
 export interface InviteRegistration {
   user: User;
-  pair: Pair;
+  pair: Pair | null;
 }
 
 export interface CreateUser {
