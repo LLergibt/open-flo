@@ -14,6 +14,12 @@ use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions},
 };
 
+mod auth;
+mod config;
+
+pub use auth::{Pair, User, bootstrap_admin};
+pub use config::AuthConfig;
+
 pub type StartupError = Box<dyn Error + Send + Sync>;
 
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
@@ -32,7 +38,19 @@ pub async fn init_database(database_url: &str) -> Result<SqlitePool, StartupErro
             .parent()
             .filter(|path| !path.as_os_str().is_empty())
         {
-            tokio::fs::create_dir_all(parent).await?;
+            create_private_directory(parent)?;
+        }
+        let mut file = std::fs::OpenOptions::new();
+        file.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            file.mode(0o600);
+        }
+        match file.open(filename) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(error.into()),
         }
     }
 
@@ -47,13 +65,29 @@ pub async fn init_database(database_url: &str) -> Result<SqlitePool, StartupErro
     Ok(pool)
 }
 
+pub(crate) fn create_private_directory(path: &Path) -> std::io::Result<()> {
+    let mut builder = std::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(path)
+}
+
 /// No CORS middleware: browser clients use a same-origin reverse proxy.
 pub fn app(pool: SqlitePool) -> Router {
+    app_with_config(pool, AuthConfig::ephemeral())
+}
+
+pub fn app_with_config(pool: SqlitePool, config: AuthConfig) -> Router {
     Router::new()
         .route("/api/message", get(message))
         .route("/health", get(health))
+        .with_state(pool.clone())
+        .merge(auth::router(pool, config))
         .fallback(not_found)
-        .with_state(pool)
 }
 
 #[derive(Serialize)]
