@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,10 +32,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 internal val Ink = Color(0xFF303647)
-internal val Paper = Color(0xFFF8E8D8)
-internal val Panel = Color(0xFFFFF9F1)
-internal val Accent = Color(0xFFF5D0B0)
+internal val Paper = Color(0xFFEEE3FA)
+internal val Panel = Color(0xFFFCF5FF)
+internal val Accent = Color(0xFFE3C7F5)
 internal val ErrorInk = Color(0xFF842E3D)
+private val BrandFont = FontFamily(Font(R.font.micro_5))
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -66,7 +68,7 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                     start = if (mobile) 18.dp else 24.dp, end = if (mobile) 22.dp else 24.dp, top = 28.dp, bottom = 24.dp
                 ), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("flo / local", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, modifier = Modifier.padding(end = 12.dp))
+                        Text("flo/local", fontFamily = BrandFont, fontSize = if (mobile) 34.sp else 40.sp, modifier = Modifier.padding(end = 12.dp))
                         Text(if (state.user != null && state.user?.role != AccountRole.ADMIN) "КАЛЕНДАРЬ" else "АВТОРИЗАЦИЯ", modifier = Modifier.border(1.dp, Ink).padding(7.dp, 5.dp), fontSize = 9.sp)
                     }
                     if (state.user == null) {

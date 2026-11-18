@@ -121,7 +121,7 @@
 
 <main>
   <header class="page-header">
-    <a class="wordmark" href="/" aria-label="open-source-flo, главная">flo<span aria-hidden="true"> / </span>local</a>
+    <a class="wordmark" href="/" aria-label="open-source-flo, главная">flo/local</a>
     <span class="build-label">КАЛЕНДАРЬ · 002</span>
   </header>
 
