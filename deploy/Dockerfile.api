@@ -2,11 +2,13 @@ FROM rust:1.91.1-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY apps/web/src/lib/diary-catalog.json ./apps/web/src/lib/diary-catalog.json
 RUN cargo build --locked --release -p flo-api
 
 FROM debian:bookworm-slim
 RUN useradd --system --uid 10001 --create-home flo \
     && mkdir /data \
+    && chmod 700 /data \
     && chown flo:flo /data
 COPY --from=build /app/target/release/flo-api /usr/local/bin/flo-api
 USER flo

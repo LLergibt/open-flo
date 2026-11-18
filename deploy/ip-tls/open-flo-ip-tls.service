@@ -1,0 +1,10 @@
+[Unit]
+Description=Renew the Open Flo IP address certificate
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash @PROJECT_ROOT@/scripts/ip-tls.sh renew
+TimeoutStartSec=20min

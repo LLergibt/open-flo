@@ -1,0 +1,308 @@
+[
+  {
+    "title": "Боль и спазмы",
+    "field": "symptoms",
+    "options": [
+      [
+        "cramps",
+        "Менструальные спазмы"
+      ],
+      [
+        "pelvic_pain",
+        "Тазовая боль"
+      ],
+      [
+        "ovulation_pain",
+        "Боль в середине цикла"
+      ],
+      [
+        "headache",
+        "Головная боль"
+      ],
+      [
+        "migraine",
+        "Мигрень"
+      ],
+      [
+        "back_pain",
+        "Боль в спине"
+      ],
+      [
+        "breast_tenderness",
+        "Чувствительность груди"
+      ],
+      [
+        "joint_pain",
+        "Боль в суставах"
+      ],
+      [
+        "muscle_pain",
+        "Боль в мышцах"
+      ]
+    ]
+  },
+  {
+    "title": "Общее самочувствие",
+    "field": "symptoms",
+    "options": [
+      [
+        "fatigue",
+        "Усталость"
+      ],
+      [
+        "dizziness",
+        "Головокружение"
+      ],
+      [
+        "hot_flashes",
+        "Приливы"
+      ],
+      [
+        "night_sweats",
+        "Ночная потливость"
+      ],
+      [
+        "chills",
+        "Озноб"
+      ],
+      [
+        "swelling",
+        "Отёчность"
+      ],
+      [
+        "poor_sleep",
+        "Плохой сон"
+      ],
+      [
+        "insomnia",
+        "Бессонница"
+      ],
+      [
+        "trouble_focusing",
+        "Трудно сосредоточиться"
+      ]
+    ]
+  },
+  {
+    "title": "Пищеварение и аппетит",
+    "field": "symptoms",
+    "options": [
+      [
+        "bloating",
+        "Вздутие"
+      ],
+      [
+        "nausea",
+        "Тошнота"
+      ],
+      [
+        "vomiting",
+        "Рвота"
+      ],
+      [
+        "constipation",
+        "Запор"
+      ],
+      [
+        "diarrhea",
+        "Диарея"
+      ],
+      [
+        "food_cravings",
+        "Тяга к еде"
+      ],
+      [
+        "increased_appetite",
+        "Повышенный аппетит"
+      ],
+      [
+        "low_appetite",
+        "Сниженный аппетит"
+      ]
+    ]
+  },
+  {
+    "title": "Кожа и волосы",
+    "field": "symptoms",
+    "options": [
+      [
+        "acne",
+        "Акне"
+      ],
+      [
+        "oily_skin",
+        "Жирная кожа"
+      ],
+      [
+        "dry_skin",
+        "Сухая кожа"
+      ],
+      [
+        "skin_irritation",
+        "Раздражение кожи"
+      ],
+      [
+        "oily_hair",
+        "Жирные волосы"
+      ],
+      [
+        "dry_hair",
+        "Сухие волосы"
+      ],
+      [
+        "hair_shedding",
+        "Выпадение волос"
+      ]
+    ]
+  },
+  {
+    "title": "Выделения и дискомфорт",
+    "field": "symptoms",
+    "options": [
+      [
+        "discharge_none",
+        "Выделений нет"
+      ],
+      [
+        "discharge_sticky",
+        "Липкие"
+      ],
+      [
+        "discharge_creamy",
+        "Кремообразные"
+      ],
+      [
+        "discharge_watery",
+        "Водянистые"
+      ],
+      [
+        "discharge_egg_white",
+        "Прозрачные и тягучие"
+      ],
+      [
+        "discharge_unusual",
+        "Необычные выделения"
+      ],
+      [
+        "vaginal_dryness",
+        "Сухость"
+      ],
+      [
+        "vaginal_itching",
+        "Зуд"
+      ],
+      [
+        "vaginal_burning",
+        "Жжение"
+      ],
+      [
+        "discharge_odor",
+        "Необычный запах"
+      ]
+    ]
+  },
+  {
+    "title": "Секс и удовольствие",
+    "field": "events",
+    "options": [
+      [
+        "sex_protected",
+        "Секс с защитой"
+      ],
+      [
+        "sex_unprotected",
+        "Секс без защиты"
+      ],
+      [
+        "masturbation",
+        "Мастурбация"
+      ],
+      [
+        "orgasm",
+        "Оргазм"
+      ],
+      [
+        "no_orgasm",
+        "Без оргазма"
+      ],
+      [
+        "oral_sex",
+        "Оральный секс"
+      ],
+      [
+        "sex_toys",
+        "Секс-игрушки"
+      ],
+      [
+        "lubricant",
+        "Использование смазки"
+      ],
+      [
+        "pain_during_sex",
+        "Боль во время секса"
+      ],
+      [
+        "bleeding_after_sex",
+        "Кровянистые выделения после секса"
+      ]
+    ]
+  },
+  {
+    "title": "Сексуальное желание",
+    "field": "events",
+    "options": [
+      [
+        "libido_high",
+        "Высокое либидо"
+      ],
+      [
+        "libido_low",
+        "Низкое либидо"
+      ]
+    ]
+  },
+  {
+    "title": "Контрацепция",
+    "field": "events",
+    "options": [
+      [
+        "condom",
+        "Презерватив"
+      ],
+      [
+        "pill_taken",
+        "Таблетка принята"
+      ],
+      [
+        "pill_missed",
+        "Таблетка пропущена"
+      ],
+      [
+        "emergency_contraception",
+        "Экстренная контрацепция"
+      ]
+    ]
+  },
+  {
+    "title": "Наблюдения за циклом",
+    "field": "events",
+    "options": [
+      [
+        "ovulation_test_positive",
+        "Положительный тест на овуляцию"
+      ],
+      [
+        "ovulation_test_negative",
+        "Отрицательный тест на овуляцию"
+      ],
+      [
+        "pregnancy_test_positive",
+        "Положительный тест на беременность"
+      ],
+      [
+        "pregnancy_test_negative",
+        "Отрицательный тест на беременность"
+      ]
+    ]
+  }
+]

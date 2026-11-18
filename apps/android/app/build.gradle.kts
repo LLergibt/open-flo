@@ -68,6 +68,14 @@ tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     dependsOn(validateReleaseApiUrl)
 }
 
+val diaryAssets = layout.buildDirectory.dir("generated/diary-assets")
+val prepareDiaryAssets by tasks.registering(Sync::class) {
+    from(rootProject.file("../web/src/lib/diary-catalog.json"))
+    into(diaryAssets)
+}
+android.sourceSets["main"].assets.srcDir(diaryAssets)
+tasks.named("preBuild") { dependsOn(prepareDiaryAssets) }
+
 dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.04.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
@@ -77,4 +85,6 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+    testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

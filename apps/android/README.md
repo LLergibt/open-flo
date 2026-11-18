@@ -1,107 +1,61 @@
-# Android: тестовый экран
+# Android: авторизация и администрирование
 
-Нативное приложение Kotlin / Jetpack Compose получает сообщение из `GET /api/message`. Сервер читает текст из SQLite. Экран показывает загрузку, сообщение или ошибку с повторной попыткой. Это каркас с демонстрационными данными; расчёты цикла и аккаунты на этом этапе ещё не реализованы.
+Нативное приложение Kotlin / Jetpack Compose использует API собственного сервера. Экран входа, профиль и административные формы используют общую с вебом палитру и оконные панели. WebView, изображения и внешние шрифты не используются.
 
-## Окружение на macOS
+## Возможности
 
-Установить Android Studio через Homebrew:
+- Вход и выход через JWT access и ротируемый refresh token.
+- Профиль текущего пользователя, просмотр своей пары и смена собственного пароля с завершением всех сессий.
+- Одноразовые приглашения партнёра: создание/отзыв владельцем дневника, копирование/отправка ссылки или кода.
+- Ручной ввод ссылки/кода, предпросмотр, явная регистрация партнёра или вход в существующий аккаунт с отдельным подтверждением принятия.
+- Прекращение связи участником с подтверждением.
+- Администратор: создание аккаунтов ролей admin / tracker / partner, список аккаунтов, включение и отключение, сброс пароля.
+- Администратор: создание пар из активных свободных аккаунтов, список и разрыв связи с подтверждением.
+
+Аккаунты и пары приходят из API; локальных демонстрационных аккаунтов и открытой регистрации нет. Регистрация партнёра доступна только по действительному одноразовому приглашению. Первый администратор создаётся локальной CLI-командой сервера по корневой инструкции проекта. Дневник и расчёты цикла относятся к следующим этапам.
+
+## Сборка на macOS
+
+При необходимости установить Android Studio и JDK 17:
 
 ```bash
 brew install --cask android-studio
-open -a "Android Studio"
-```
-
-В мастере установки загрузить Android SDK. Через SDK Manager установить Android SDK Platform 35, Build-Tools 35.0.0, Platform-Tools и Android Emulator. В Device Manager создать виртуальный телефон; на Apple Silicon выбрать ARM64-образ.
-
-Для закреплённой сборки использовать JDK 17. Если совместимый JDK уже доступен в Android Studio, выбрать его в настройке Gradle JDK. Для отдельной установки:
-
-```bash
 brew install openjdk@17
-export JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"
-export ANDROID_HOME="$HOME/Library/Android/sdk"
-export PATH="$ANDROID_HOME/platform-tools:$PATH"
 ```
 
-Не требуется устанавливать глобальный Gradle: используется проверяемый Gradle Wrapper. Согласование лицензий SDK выполняется при установке соответствующих пакетов.
+Через SDK Manager установить Android SDK Platform 35 и Build-Tools 35.0.0. В проекте закреплены AGP 8.9.2, Gradle 8.11.1, Kotlin 2.1.20, Compose BOM 2025.04.01, min SDK 26, compile/target SDK 35. Скрипт проекта автоматически ищет локальные инструменты в игнорируемой `.tooling/`.
 
-## Запуск в Android Studio
-
-1. Сначала запустить API по инструкции в корне репозитория.
-2. Открыть `/Users/georgijnazarov/projects/open-source-flo/apps/android` как проект Android Studio.
-3. Дождаться Gradle Sync и выбрать Gradle JDK 17.
-4. Запустить виртуальный телефон в Device Manager.
-5. Выбрать конфигурацию `app` и нажать Run.
-
-По умолчанию debug-сборка обращается к `http://10.0.2.2:8080`. Адрес `10.0.2.2` в Android Emulator указывает на Mac, на котором работает API. `localhost` внутри эмулятора указывает на сам эмулятор.
-
-После изменения текста в демонстрационной БД нажать «Обновить». При недоступном API появится ошибка; после запуска сервера доступна повторная попытка.
-
-## Сборка из терминала
+Из корня репозитория:
 
 ```bash
-cd /Users/georgijnazarov/projects/open-source-flo/apps/android
-./gradlew assembleDebug
-./gradlew installDebug
+cd /Users/georgijnazarov/projects/open-source-flo
+./scripts/android.sh --offline --no-daemon assembleDebug lintDebug testDebugUnitTest -PAPI_BASE_URL=http://127.0.0.1:8080
 ```
 
-APK создаётся в `app/build/outputs/apk/debug/app-debug.apk`. `installDebug` требует запущенного эмулятора или подключённого Android-устройства.
+Для первой загрузки отсутствующих зависимостей убрать `--offline`. Production-зависимости остаются прежними; JVM-тесты используют JUnit 4.13.2 и org.json 20240303, которые не включаются в APK.
 
-Для физического телефона включить USB debugging, подключить его и подтвердить доверие компьютеру. При доступном `adb` можно пробросить порт API через USB:
+APK: `apps/android/app/build/outputs/apk/debug/app-debug.apk`. Отчёт lint: `apps/android/app/build/reports/lint-results-debug.html`; JVM-тесты: `apps/android/app/build/reports/tests/testDebugUnitTest/index.html`.
 
-```bash
-adb reverse tcp:8080 tcp:8080
-./gradlew installDebug -PAPI_BASE_URL=http://127.0.0.1:8080
-```
+На текущем этапе проверки выполняются только локально: компиляция, unit-тесты и статический анализ. Подключение телефона, проверка его состояния и установка APK не выполняются.
 
-Вариант с сервером в локальной сети:
+## Сессии и сеть
 
-```bash
-./gradlew assembleDebug -PAPI_BASE_URL=http://192.168.1.10:8080
-```
+Access и refresh token хранятся только в памяти AuthRepository. Пароли не сохраняются в настройках, файлах или saved state; поля пароля очищаются при отправке формы. После перезапуска приложения требуется повторный вход. Токены, пароли и сырые ошибки сервера не выводятся в логи или UI.
 
-Для LAN-сценария API должен слушать доступный сетевой интерфейс; настройки описаны в корневой инструкции. HTTP разрешён только в debug-сборке для синтетических данных.
+Защищённые вызовы отправляют Authorization: Bearer. При HTTP 401 выполняется один single-flight refresh под Mutex и не более одного повтора исходного запроса. Параллельные 401 используют уже обновлённую сессию, не повторяя старый refresh token. HTTP 403 и HTTP 401 с бизнес-кодом invalid_credentials не запускают refresh. Для автоматического обновления требуется HTTP 401 с кодом unauthorized. Ошибка refresh или повторный 401 завершают локальную сессию. Logout отправляет native refresh token без Authorization Bearer, чтобы истёкший access не мешал отзыву текущей сессии на сервере и очищает локальное состояние даже при недоступности сети; UI сообщает, если отзыв не удалось подтвердить.
 
-## Release и сеть
+HttpURLConnection работает на Dispatchers.IO. Перенаправления отключены, connect/read timeout по 8 секунд, общий таймер запроса отключает соединение через 15 секунд. Разбираемый ответ ограничен 1 048 576 символами. Коды ошибок переводятся на русский без отображения SQL или сырых исключений.
 
-Release-сборка запрещает незашифрованный HTTP через Android Network Security Configuration. Без явно заданного HTTPS-адреса задача release завершается ошибкой:
+HTTP разрешён только debug-сборкам для локальной разработки. По умолчанию debug URL — `http://10.0.2.2:8080` для будущего эмулятора. Адрес меняется свойством `-PAPI_BASE_URL=...`; текущая сборка сама по себе не подключается к телефону. Для настоящих паролей и внешнего развёртывания использовать HTTPS.
 
-```bash
-./gradlew assembleRelease -PAPI_BASE_URL=https://your-server.example
-```
+Release без явно заданного HTTPS API_BASE_URL блокируется. Release signing и публикация не настроены.
 
-Адрес не должен содержать пароль, query-параметры или fragment. Для проверки интерфейса подходят debug-сборки. Release signing и публикация пока не настроены.
+## Проверки и ограничения
 
-Запрос выполняется на `Dispatchers.IO` через штатный `HttpURLConnection`; connect/read timeout — по 8 секунд. Перенаправления отключены, ответ ограничен 64 КиБ, JSON проверяется. Отмена ViewModel не преобразуется в пользовательскую ошибку. Записи дневника, секреты и реальные пользовательские данные в этом каркасе не используются.
+JVM-тесты проверяют параллельные 401, один refresh, отсутствие refresh на 403, очистку памяти при отказе refresh/logout, один повтор, новую сессию после перезапуска и безопасные сообщения об ошибках. Это проверки клиентского протокола с синтетическими ответами; серверные проверки доступа и хеширования выполняются отдельно.
 
-## Закреплённые версии и происхождение wrapper
+Компиляция APK не подтверждает визуальное поведение Android-устройства. Такой запуск на этом этапе не проводится по указанию пользователя.
 
-| Компонент | Версия |
-|---|---|
-| Android Gradle Plugin | 8.9.2 |
-| Gradle | 8.11.1 |
-| JDK | 17 |
-| Kotlin и Compose Compiler plugin | 2.1.20 |
-| Compose BOM | 2025.04.01 |
-| Compile / Target SDK | 35 / 35 |
-| Minimum SDK | 26 |
+Gradle Wrapper получен из официального репозитория Gradle v8.11.1. SHA256 JAR: `2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046`. SHA256 Gradle ZIP закреплён в `gradle/wrapper/gradle-wrapper.properties`.
 
-Gradle Wrapper (`gradlew`, `gradlew.bat`, `gradle-wrapper.jar`) получен из официального репозитория Gradle, тег `v8.11.1`. Скрипты сохраняют исходные лицензионные заголовки.
-
-- Wrapper JAR SHA256: `2db75c40782f5e8ba1fc278a5574bab070adccb2d21ca5a6e5ed840888448046`.
-- Gradle binary ZIP SHA256: `f397b287023acdba1e9f6fc5ea72d22dd63669d59ed4a289a29b1a76eee151c6`.
-
-Checksum дистрибутива закреплён в `gradle/wrapper/gradle-wrapper.properties`. Перед добавлением JAR его checksum сверен с официальной публикацией Gradle. Первый запуск скачивает закреплённый дистрибутив и зависимости сборки.
-
-Источники:
-
-- [Homebrew: Android Studio](https://formulae.brew.sh/cask/android-studio).
-- [Совместимость AGP 8.9](https://developer.android.com/build/releases/agp-8-9-0-release-notes).
-- [Compose Compiler plugin](https://developer.android.com/develop/ui/compose/setup-compose-dependencies-and-compiler).
-- [Gradle Wrapper](https://docs.gradle.org/8.11.1/userguide/gradle_wrapper.html).
-- [Официальные checksum Gradle](https://services.gradle.org/distributions/).
-- [Файлы wrapper в официальном репозитории](https://github.com/gradle/gradle/tree/v8.11.1/gradle/wrapper).
-- [Сеть Android Emulator](https://developer.android.com/studio/run/emulator-networking-address).
-
-## Границы проверки
-
-Успешная сборка APK подтверждает компиляцию и упаковку. Запуск интерфейса и соединение с API на эмуляторе или физическом Android требуют отдельной проверки на устройстве. Состояние фактически выполненных проверок фиксируется в отчёте текущей задачи.
+Приглашение хранится только в памяти до принятия или отмены, в том числе при выходе и повторном входе внутри приложения. Ссылки разбираются только как http(s) origin с fragment `#invite=64hex`, либо чистый 64hex-код; query, userinfo и посторонние пути отклоняются. Произвольный origin ссылки никогда не загружается: все API-вызовы используют настроенный сервер BuildConfig. Если PUBLIC_APP_URL не задан, показывается код. Bootstrap-команда по умолчанию: `./scripts/create-admin.sh` (root); существующие аккаунты приложение не переименовывает.

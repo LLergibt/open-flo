@@ -9,11 +9,13 @@
   "scripts": {
     "dev": "vite",
     "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "svelte": "5.57.3"
+    "svelte": "5.57.3",
+    "temporal-polyfill": "1.0.8"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
