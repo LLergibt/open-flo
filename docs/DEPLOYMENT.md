@@ -26,8 +26,7 @@ sudo ./scripts/ip-tls.sh install-timer
 Откройте `https://PUBLIC_IP/health`. При первом развёртывании создайте администратора командой ниже. Она интерактивно запросит пароль и не нужна, если база уже содержит администратора.
 
 ```sh
-sudo docker compose -p open-source-flo --env-file .env.ip-tls -f compose.prod.yaml exec api \
-  flo-api create-admin --username root --display-name root
+sudo ./scripts/create-admin.sh --docker
 ```
 
 Скрипт поддерживает как `docker compose`, так и `docker-compose`. В примерах можно заменить команду на доступный вариант. С Compose v2 предупреждение об устаревшем поле `version` можно пропустить. Заголовок нужен для совместимости со старым клиентом.
