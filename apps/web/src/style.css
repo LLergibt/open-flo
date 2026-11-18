@@ -127,3 +127,82 @@ input:disabled, select:disabled { opacity: .65; }
 .invite-preview { min-height: 0; margin: 24px 0; }
 .checkbox-field { display: flex; align-items: flex-start; gap: 12px; margin: 22px 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.6; }
 .checkbox-field input { flex: 0 0 22px; width: 22px; min-height: 22px; height: 22px; margin: 2px 0 0; accent-color: #303647; }
+
+/* Calendar and diary share the existing local, minimal Y2K window system. */
+.calendar-window { margin-bottom: 30px; }
+.calendar-heading { display: flex; align-items: start; justify-content: space-between; gap: 16px; }
+.calendar-heading h1 { margin-bottom: 12px; }
+.calendar-toolbar { display: grid; grid-template-columns: 48px minmax(0,1fr) 48px; align-items: center; gap: 12px; margin: 28px 0 18px; }
+.calendar-toolbar h2 { text-align: center; text-transform: capitalize; font-size: clamp(17px,4vw,23px); }
+.month-arrow { padding: 6px; width: 48px; }
+.calendar-weekdays, .calendar-days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); }
+.calendar-weekdays { font-size: 11px; text-align: center; padding-bottom: 9px; }
+.calendar-days { border-block-start: 1px solid; border-inline-start: 1px solid; }
+.calendar-day { position: relative; display: flex; flex-direction: column; justify-content: center; align-items: center; width: 100%; min-height: 58px; padding: 5px 2px; border: 0; border-inline-end: 1px solid; border-block-end: 1px solid; background: #fff9f1; color: #303647; font-size: 14px; gap: 3px; }
+.calendar-day.outside { color: #77716c; background: #f8eee3; }
+.calendar-day.actual { background: #f2b8bb; color: #702833; }
+.calendar-day.forecast { background: #fff2f0; color: #842e3d; outline: 1px dashed #a44150; outline-offset: -5px; }
+.calendar-day.fertile { background: #dce9f8; color: #254d7c; }
+.calendar-day.ovulation { box-shadow: inset 0 0 0 2px #446d9d; }
+.calendar-day.selected { box-shadow: inset 0 0 0 3px #303647; }
+.calendar-day[aria-current="date"] > span:first-child { text-decoration: underline; text-underline-offset: 3px; }
+.calendar-day:hover:enabled { background: #f5d0b0; }
+.day-mark { height: 10px; font-size: 11px; line-height: 10px; }
+.calendar-legend { display: flex; flex-wrap: wrap; gap: 12px 18px; margin-top: 16px; font: 11px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.calendar-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.calendar-legend i { width: 13px; height: 13px; border: 1px solid; display: inline-block; }
+.legend-actual { background: #f2b8bb; }
+.legend-forecast { background: #fff2f0; border-style: dashed !important; }
+.legend-fertile { background: #dce9f8; }
+.calendar-selected { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 22px; font-size: 13px; }
+.forecast-summary { padding: 20px; border: 1px solid; background: #f8e8d8; margin-top: 24px; }
+.forecast-summary .panel-label { margin-bottom: 10px; }
+.forecast-main { margin: 0; font-size: 17px; line-height: 1.5; font-weight: 650; }
+.forecast-caution { padding-top: 13px; border-top: 1px dashed; margin-top: 16px; }
+.diary-editor { margin-top: 32px; border-top: 1px solid; padding-top: 26px; }
+.diary-editor h2 { font-size: 21px; }
+.choice-group { padding: 0; margin: 0 0 22px; }
+.choice-group legend { font-size: 14px; font-weight: 650; margin-bottom: 10px; }
+.choice-group label { display: flex; gap: 10px; align-items: center; padding: 8px 0; min-height: 44px; font: 14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+.choice-group input { width: 20px; min-width: 20px; height: 20px; min-height: 20px; margin: 0; accent-color: #303647; }
+.choice-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 4px 18px; }
+textarea { width: 100%; border: 1px solid #303647; background: #fff9f1; color: #303647; font: 16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; padding: 12px; resize: vertical; min-height: 108px; }
+textarea:focus-visible { outline: 3px solid #303647; outline-offset: 4px; }
+.calendar-details { margin-top: 28px; border-top: 1px solid; padding-top: 14px; }
+.calendar-details > summary { cursor: pointer; min-height: 48px; padding: 12px 0; font-size: 16px; font-weight: 650; }
+.calendar-details form { margin-top: 22px; }
+.calendar-details form > fieldset > legend { font-size: 14px; margin-bottom: 18px; }
+.period-history { display: grid; gap: 12px; }
+.period-row { display: flex; flex-wrap: wrap; gap: 12px; padding: 16px; border: 1px solid; background: #f8e8d8; font-size: 13px; align-items: center; }
+.period-row > div:first-child { flex: 1 0 100%; }
+.period-row .detail { margin-top: 5px; }
+.period-row .confirmation { flex-basis: 100%; }
+.privacy-note { border-top: 1px dashed; padding-top: 18px; margin-top: 28px; }
+.partner-banner { padding: 14px; border: 1px solid; background: #f8e8d8; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); border: 0; white-space: nowrap; }
+@media (max-width:480px) {
+  .calendar-body { padding: 24px 16px; }
+  .calendar-heading { flex-direction: column; }
+  .calendar-heading > button { width: auto; }
+  .calendar-toolbar { gap: 8px; }
+  .calendar-day { min-height: 48px; font-size: 13px; }
+  .calendar-selected .small { width: auto; }
+  .choice-grid { grid-template-columns: 1fr; gap: 0; }
+  .forecast-summary { padding: 16px; }
+  .calendar-legend { gap: 10px 12px; }
+}
+
+.day-dialog { width: min(100% - 32px, 540px); max-height: 85dvh; padding: 0 18px 20px; border: 2px solid #303647; background: #fff9f1; color: #303647; box-shadow: 5px 5px #303647; overflow: auto; }
+.day-dialog:modal { overscroll-behavior: contain; }
+.day-dialog::backdrop { overflow: hidden; overscroll-behavior: contain; background: #30364788; }
+.day-dialog-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid; position: sticky; top: 0; z-index: 1; background: #fff9f1; }
+.day-dialog-heading h2 { margin: 0; font-size: 16px; }
+.day-dialog-heading button { width: auto; }
+.day-dialog .diary-editor { margin-top: 16px; }
+@media (max-width: 520px) {
+  main { padding-inline: max(10px, env(safe-area-inset-left)) max(14px, env(safe-area-inset-right)); }
+  .calendar-body { padding: 16px 10px; }
+  .calendar-heading { flex-direction: row; gap: 8px; }
+  .calendar-toolbar { margin-block: 12px; }
+  .day-dialog { margin: auto 0 0; width: 100%; max-width: 100%; max-height: 89dvh; box-shadow: none; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+}

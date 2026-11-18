@@ -1,3 +1,6 @@
+import { isCalendar, isPeriod } from './calendar.ts';
+import type { CalendarData, CycleSettings, DiaryInput } from './calendar.ts';
+import { localToday } from './dates.ts';
 import { isPair, isRecord, isUser } from './types.ts';
 import type { CreateUser, Invite, InvitePreview, InviteRegistration, Pair, User } from './types.ts';
 
@@ -124,7 +127,32 @@ function parseInvite(value: unknown): Invite {
   return { token: value.token, url: value.url, expires_at: value.expires_at };
 }
 
+function calendarRequest(method = 'GET', body?: unknown): RequestInit {
+  return { method, headers: { 'X-Calendar-Date': localToday() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
+}
+
 export const api = {
+  async calendar(): Promise<CalendarData> {
+    const value = await authenticated('/api/calendar', calendarRequest());
+    if (!isCalendar(value)) throw new ApiError('invalid_response');
+    return value;
+  },
+  async saveCycleSettings(input: CycleSettings): Promise<void> {
+    await authenticated('/api/cycle/settings', calendarRequest('PUT', input));
+  },
+  async savePeriod(input: { start_date: string; end_date: string | null }, id?: string): Promise<void> {
+    const value = await authenticated('/api/cycle/periods' + (id ? '/' + encodeURIComponent(id) : ''), calendarRequest(id ? 'PUT' : 'POST', input));
+    if (!id && !isPeriod(value)) throw new ApiError('invalid_response');
+  },
+  async deletePeriod(id: string): Promise<void> {
+    await authenticated('/api/cycle/periods/' + encodeURIComponent(id), calendarRequest('DELETE'));
+  },
+  async saveDiary(date: string, input: DiaryInput): Promise<void> {
+    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('PUT', input));
+  },
+  async deleteDiary(date: string): Promise<void> {
+    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('DELETE'));
+  },
   async setupStatus(): Promise<boolean> {
     const value = await send('/api/setup/status');
     if (!isRecord(value) || typeof value.needs_setup !== 'boolean') throw new ApiError('invalid_response');

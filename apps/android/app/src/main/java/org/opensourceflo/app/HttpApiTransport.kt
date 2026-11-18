@@ -34,6 +34,9 @@ internal class HttpApiTransport(private val baseUrl: String = BuildConfig.API_BA
             connection.connectTimeout = 8_000
             connection.readTimeout = 8_000
             connection.setRequestProperty("Accept", "application/json")
+            if (path == "/api/calendar" || path.startsWith("/api/cycle/") || path.startsWith("/api/diary/")) {
+                connection.setRequestProperty("X-Calendar-Date", java.time.LocalDate.now().toString())
+            }
             if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")
             if (body != null) {
                 val bytes = body.toByteArray(Charsets.UTF_8)
@@ -46,6 +49,7 @@ internal class HttpApiTransport(private val baseUrl: String = BuildConfig.API_BA
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val text = stream?.bufferedReader(Charsets.UTF_8)?.use { reader ->
+                val limit = if (path == "/api/calendar") 16_777_216 else 1_048_576
                 val result = StringBuilder()
                 val buffer = CharArray(4096)
                 while (true) {
@@ -53,7 +57,7 @@ internal class HttpApiTransport(private val baseUrl: String = BuildConfig.API_BA
                     if (System.nanoTime() > deadline) throw IOException("Request deadline")
                     val count = reader.read(buffer)
                     if (count < 0) break
-                    if (result.length + count > 1_048_576) throw IOException("Response size limit")
+                    if (result.length + count > limit) throw IOException("Response size limit")
                     result.append(buffer, 0, count)
                 }
                 result.toString()

@@ -7,8 +7,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-data class AuthState(
+internal data class AuthState(
     val user: Account? = null,
+    val calendar: CalendarData? = null,
+    val calendarError: String? = null,
     val ownPair: AccountPair? = null,
     val users: List<Account> = emptyList(),
     val pairs: List<AccountPair> = emptyList(),
@@ -22,7 +24,7 @@ data class AuthState(
     val generatedInvite: GeneratedInvitation? = null
 )
 
-class AuthViewModel : ViewModel() {
+internal class AuthViewModel : ViewModel() {
     private val repository = AuthRepository()
     private val mutableState = MutableStateFlow(AuthState())
     val state = mutableState.asStateFlow()
@@ -155,6 +157,40 @@ class AuthViewModel : ViewModel() {
         loadDashboard()
     }
 
+    fun refreshCalendar() = runAction { loadCalendar() }
+    fun saveDiary(date: java.time.LocalDate, entry: DiaryDay) = mutateCalendar { repository.saveDiary(date, entry) }
+    fun deleteDiary(date: java.time.LocalDate) = mutateCalendar { repository.deleteDiary(date) }
+    fun savePeriod(id: String?, start: java.time.LocalDate, end: java.time.LocalDate?) =
+        mutateCalendar { repository.savePeriod(id, start, end) }
+    fun deletePeriod(id: String) = mutateCalendar { repository.deletePeriod(id) }
+    fun saveCycleSettings(length: Int?, duration: Int, method: String, context: String) =
+        mutateCalendar { repository.saveCycleSettings(length, duration, method, context) }
+
+    private fun mutateCalendar(action: suspend () -> Unit) = runAction {
+        if (mutableState.value.user?.role != AccountRole.TRACKER || mutableState.value.calendar?.owner != true) {
+            throw ApiFailure("forbidden")
+        }
+        action()
+        loadCalendar()
+        mutableState.value = mutableState.value.copy(notice = "Изменения сохранены.")
+    }
+    private suspend fun loadCalendar() {
+        val role = mutableState.value.user?.role ?: return
+        if (role == AccountRole.ADMIN) return
+        if (role == AccountRole.PARTNER) mutableState.value = mutableState.value.copy(calendar = null)
+        try {
+            val next = repository.calendar()
+            if (next.owner != (role == AccountRole.TRACKER)) throw ApiFailure("invalid_response")
+            mutableState.value = mutableState.value.copy(calendar = next, calendarError = null)
+        } catch (failure: ApiFailure) {
+            if (failure.code == "unauthorized") throw failure
+            val message = if (failure.code == "forbidden" && role == AccountRole.PARTNER) {
+                "Календарь появится после привязки к владельцу."
+            } else authErrorMessage(failure.code)
+            mutableState.value = mutableState.value.copy(calendar = null, calendarError = message)
+        }
+    }
+
     private suspend fun loadDashboard() {
         val user = repository.me()
         if (user.role == AccountRole.ADMIN) {
@@ -164,6 +200,7 @@ class AuthViewModel : ViewModel() {
         } else {
             val pair = repository.ownPair()
             mutableState.value = mutableState.value.copy(user = user, ownPair = pair, users = emptyList(), pairs = emptyList(), generatedInvite = if (pair != null) null else mutableState.value.generatedInvite)
+            loadCalendar()
         }
     }
     private fun adminAction(action: suspend () -> Unit) = runAction {

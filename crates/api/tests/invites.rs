@@ -719,3 +719,73 @@ async fn admin_invites_rotate_revoke_expire_and_cannot_be_used_for_pairing() {
         StatusCode::NOT_FOUND
     );
 }
+
+#[tokio::test]
+async fn calendar_day_entries_follow_current_pair_and_only_owner_can_write() {
+    let f = Fixture::new().await;
+    let admin = f.admin().await;
+    let admin_token = admin["access_token"].as_str().unwrap();
+    let tracker = f.create(admin_token, "calendar_owner", "tracker").await;
+    let partner = f.create(admin_token, "calendar_partner", "partner").await;
+    let owner_login = f.login("calendar_owner", PASSWORD).await;
+    let partner_login = f.login("calendar_partner", PASSWORD).await;
+    let owner_bearer = format!("Bearer {}", owner_login["access_token"].as_str().unwrap());
+    let partner_bearer = format!("Bearer {}", partner_login["access_token"].as_str().unwrap());
+    let admin_bearer = format!("Bearer {admin_token}");
+    let owner_headers = [("authorization", owner_bearer.as_str())];
+    let partner_headers = [("authorization", partner_bearer.as_str())];
+    let path = "/api/diary/2025-11-01";
+    let entry = json!({"symptoms":["acne","cramps"],"events":["orgasm","lubricant"],"mood":"calm","flow":"","pain":1,"notes":"Fixture"});
+    assert_eq!(
+        f.request("PUT", path, Some(entry.clone()), &owner_headers)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        f.request("GET", "/api/calendar", None, &partner_headers)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    let (status, _, _) = f
+        .request(
+            "POST",
+            "/api/admin/pairs",
+            Some(json!({"tracker_id":tracker["id"],"partner_id":partner["id"]})),
+            &[("authorization", &admin_bearer)],
+        )
+        .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let (status, headers, shared) = f
+        .request("GET", "/api/calendar", None, &partner_headers)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(headers["cache-control"], "no-store");
+    assert_eq!(shared["access"], "partner");
+    assert!(shared["settings"].is_null());
+    assert_eq!(shared["entries"][0]["notes"], entry["notes"]);
+    assert_eq!(shared["entries"][0]["events"], entry["events"]);
+    assert_eq!(
+        f.request("PUT", path, Some(entry), &partner_headers)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        f.request("DELETE", path, None, &partner_headers).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        f.request("DELETE", "/api/me/pair", None, &owner_headers)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        f.request("GET", "/api/calendar", None, &partner_headers)
+            .await
+            .0,
+        StatusCode::FORBIDDEN
+    );
+}

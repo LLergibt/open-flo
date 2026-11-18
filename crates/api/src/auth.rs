@@ -1,5 +1,6 @@
 mod account_service;
 mod accounts;
+mod calendar;
 mod pairs;
 mod store;
 pub use account_service::bootstrap_admin;
@@ -359,6 +360,22 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
             get(pairs::pairs).post(pairs::create_pair),
         )
         .route("/api/admin/pairs/{id}", delete(pairs::unlink_pair))
+        .route("/api/calendar", get(calendar::calendar))
+        .route(
+            "/api/cycle/settings",
+            axum::routing::put(calendar::settings),
+        )
+        .route("/api/cycle/periods", post(calendar::create_period))
+        .route(
+            "/api/cycle/periods/{id}",
+            axum::routing::put(calendar::update_period).delete(calendar::delete_period),
+        )
+        .route(
+            "/api/diary/{date}",
+            axum::routing::put(calendar::save_diary)
+                .layer(axum::extract::DefaultBodyLimit::max(24 * 1024))
+                .delete(calendar::delete_diary),
+        )
         .route("/api/setup/status", get(setup_status))
         .layer(axum::extract::DefaultBodyLimit::max(8192))
         .layer(axum::middleware::map_response(no_store))

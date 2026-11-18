@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import CalendarWorkspace from './components/CalendarWorkspace.svelte';
   import AdminPanel from './components/AdminPanel.svelte';
   import LoginForm from './components/LoginForm.svelte';
   import MemberPanel from './components/MemberPanel.svelte';
@@ -11,6 +12,7 @@
   import { roleNames } from './lib/types';
   import type { User } from './lib/types';
 
+  let pairRevision = $state(0);
   let user = $state<User | null>(null);
   let pendingInvite = $state<string | null>(null);
   let phase = $state<'loading' | 'ready' | 'error'>('loading');
@@ -120,11 +122,15 @@
 <main>
   <header class="page-header">
     <a class="wordmark" href="/" aria-label="open-source-flo, главная">flo<span aria-hidden="true"> / </span>local</a>
-    <span class="build-label">АВТОРИЗАЦИЯ · 001</span>
+    <span class="build-label">КАЛЕНДАРЬ · 002</span>
   </header>
 
   {#if notice}<p class="feedback top-notice" class:error={retryLogout} role="status">{notice}</p>{/if}
   {#if retryLogout}<button class="secondary spaced-bottom" type="button" onclick={() => void logout()} disabled={loggingOut}>{loggingOut ? 'Выходим…' : 'Повторить выход'}</button>{/if}
+
+  {#if phase === 'ready' && !pendingInvite && user && user.role !== 'admin'}
+    {#key user.id + ':' + pairRevision}<CalendarWorkspace {user} disabled={loggingOut} />{/key}
+  {/if}
 
   <section class="window" aria-labelledby="screen-title">
     <div class="titlebar" aria-hidden="true"><span>{pendingInvite ? 'invite.exe' : user ? 'profile.exe' : 'auth.exe'}</span><span class="window-controls">─ □ ×</span></div>
@@ -162,7 +168,7 @@
         {#if user.role === 'admin'}
           <p class="detail">Создавайте аккаунты и связывайте владельца дневника с партнёром в панели ниже.</p>
         {:else}
-          {#key user.id}<MemberPanel {user} disabled={loggingOut} />{/key}
+          {#key user.id}<MemberPanel {user} disabled={loggingOut} onpairchange={() => { pairRevision += 1; }} />{/key}
         {/if}
         <PasswordForm disabled={loggingOut} onchanged={() => signedOut('Пароль изменён. Все ваши сессии завершены. Войдите заново с новым паролем.')} />
         <DeleteAccount disabled={loggingOut} onremoved={() => { pendingInvite = null; signedOut('Аккаунт удалён.'); }} />
@@ -179,5 +185,5 @@
   {#if phase === 'ready' && !pendingInvite && user?.role === 'admin'}
     {#key user.id}<AdminPanel {user} disabled={loggingOut} onselfpasswordchanged={() => signedOut('Пароль изменён. Войдите заново с новым паролем.')} />{/key}
   {/if}
-  <p class="footnote">Аккаунты и пары работают на вашем сервере. Дневник и расчёты цикла появятся на следующем этапе.</p>
+  <p class="footnote">Календарь и личный дневник работают на вашем сервере. Календарные прогнозы приблизительны.</p>
 </main>

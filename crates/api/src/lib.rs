@@ -16,6 +16,7 @@ use sqlx::{
 
 mod auth;
 mod config;
+mod cycle;
 
 pub use auth::{Pair, User, bootstrap_admin};
 pub use config::AuthConfig;

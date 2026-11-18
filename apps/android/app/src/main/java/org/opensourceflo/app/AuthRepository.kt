@@ -69,6 +69,30 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
         return response
     }
 
+    internal suspend fun calendar(): CalendarData {
+        val value = json(expect(protected("GET", "/api/calendar"), 200))
+        return runCatching { parseCalendar(value) }.getOrElse { throw ApiFailure("invalid_response") }
+    }
+    internal suspend fun saveDiary(date: java.time.LocalDate, entry: DiaryDay) {
+        expect(protected("PUT", "/api/diary/$date", entry.json()), 204)
+    }
+    internal suspend fun deleteDiary(date: java.time.LocalDate) {
+        expect(protected("DELETE", "/api/diary/$date"), 204)
+    }
+    internal suspend fun savePeriod(id: String?, start: java.time.LocalDate, end: java.time.LocalDate?) {
+        val body = JSONObject().put("start_date", start.toString()).put("end_date", end?.toString() ?: JSONObject.NULL)
+        if (id == null) expect(protected("POST", "/api/cycle/periods", body), 201)
+        else expect(protected("PUT", "/api/cycle/periods/${safeId(id)}", body), 204)
+    }
+    internal suspend fun deletePeriod(id: String) {
+        expect(protected("DELETE", "/api/cycle/periods/${safeId(id)}"), 204)
+    }
+    internal suspend fun saveCycleSettings(length: Int?, duration: Int, method: String, context: String) {
+        val body = JSONObject().put("cycle_length", length ?: JSONObject.NULL).put("period_length", duration)
+            .put("length_method", method).put("context", context)
+        expect(protected("PUT", "/api/cycle/settings", body), 204)
+    }
+
     suspend fun me(): Account = account(json(expect(protected("GET", "/api/me"), 200)))
     suspend fun ownPair(): AccountPair? {
         val value = json(expect(protected("GET", "/api/me/pair"), 200))

@@ -25,6 +25,8 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
@@ -53,6 +55,9 @@ class MainActivity : ComponentActivity() {
 @Composable
 private fun AuthApplication(model: AuthViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        if (state.user?.role == AccountRole.PARTNER) model.refreshCalendar()
+    }
     Surface(color = Paper, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             val mobile = maxWidth <= 480.dp
@@ -62,11 +67,16 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                 ), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("flo / local", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, modifier = Modifier.padding(end = 12.dp))
-                        Text("АВТОРИЗАЦИЯ · 001", modifier = Modifier.border(1.dp, Ink).padding(7.dp, 5.dp), fontSize = 9.sp)
+                        Text(if (state.user != null && state.user?.role != AccountRole.ADMIN) "КАЛЕНДАРЬ" else "АВТОРИЗАЦИЯ", modifier = Modifier.border(1.dp, Ink).padding(7.dp, 5.dp), fontSize = 9.sp)
                     }
                     if (state.user == null) {
                         RetroWindow("auth.exe", if (state.needsSetup) "Настройка сервера" else "Вход в аккаунт") { LoginScreen(state, model) }
                     } else {
+                        if (state.user?.role != AccountRole.ADMIN && state.pendingInvite == null) {
+                            RetroWindow("calendar.exe", if (state.user?.role == AccountRole.PARTNER) "Календарь партнёра" else "Мой календарь") {
+                                CalendarScreen(state, model)
+                            }
+                        }
                         RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
                         if (state.user?.role == AccountRole.ADMIN) RetroWindow("admin.exe", "Администрирование") { AdminScreen(state, model) }
                     }

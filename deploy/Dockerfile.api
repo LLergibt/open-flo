@@ -2,6 +2,7 @@ FROM rust:1.91.1-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
+COPY apps/web/src/lib/diary-catalog.json ./apps/web/src/lib/diary-catalog.json
 RUN cargo build --locked --release -p flo-api
 
 FROM debian:bookworm-slim

@@ -5,7 +5,7 @@
   import type { Pair, User } from '../lib/types';
   import { roleNames } from '../lib/types';
 
-  let { user, disabled = false }: { user: User; disabled?: boolean } = $props();
+  let { user, disabled = false, onpairchange }: { user: User; disabled?: boolean; onpairchange?: () => void } = $props();
   let pair = $state<Pair | null>(null);
   let loaded = $state(false);
   let busy = $state(false);
@@ -37,6 +37,7 @@
     try {
       await api.leavePair();
       pair = null;
+      onpairchange?.();
       confirming = false;
       notice = 'Связь прекращена. Новые данные больше не доступны через эту пару.';
     } catch (failure) {
@@ -65,7 +66,7 @@
         <span class="tag">{roleNames[other.role]}</span>
       </div>
       <p class="detail">@{other.username} · {other.is_active ? 'Аккаунт активен' : 'Аккаунт отключён'}</p>
-      <p class="detail">Связь активна. Дневник и просмотр симптомов появятся на следующем этапе.</p>
+      <p class="detail">Связанный партнёр может читать календарь и записи дневника.</p>
       {#if confirming}
         <div class="confirmation">
           <p>Прекратить связь с {other.display_name}? Новые данные больше не будут доступны партнёру.</p>
