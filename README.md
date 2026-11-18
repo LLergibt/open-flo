@@ -122,6 +122,8 @@ CHECK_ANDROID=1 ./scripts/check.sh
 
 ## Контейнеры
 
+Для сервера с публичным IP используйте [production Compose и HTTPS с автоматическим продлением](docs/DEPLOYMENT.md). Локальные команды ниже поднимают стек на loopback.
+
 При работающем Docker Engine:
 
 ```bash

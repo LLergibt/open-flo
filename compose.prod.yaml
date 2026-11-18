@@ -1,0 +1,49 @@
+name: open-source-flo
+services:
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      BIND_ADDR: 0.0.0.0:8080
+      DATABASE_URL: sqlite:///data/flo.db
+      JWT_SECRET_FILE: /data/jwt.key
+      PUBLIC_APP_URL: ${PUBLIC_ORIGIN:?Run scripts/ip-tls.sh init first}
+      TRUSTED_ORIGINS: ${PUBLIC_ORIGIN:?Run scripts/ip-tls.sh init first}
+      COOKIE_SECURE: "true"
+    volumes:
+      - flo-data:/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    environment:
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?Run scripts/ip-tls.sh init first}
+    entrypoint: ["/bin/sh", "/deploy/configure-nginx.sh", "start"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/ip-tls:/deploy:ro
+      - acme-webroot:/var/www/acme:ro
+      - nginx-tls:/tls:ro
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:v5.10.0
+    profiles: ["certificate"]
+    volumes:
+      - ./deploy/ip-tls:/deploy:ro
+      - acme-state:/etc/letsencrypt
+      - acme-webroot:/var/www/acme
+      - nginx-tls:/tls
+
+volumes:
+  flo-data:
+  acme-state:
+  acme-webroot:
+  nginx-tls:
