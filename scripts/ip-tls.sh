@@ -90,7 +90,8 @@ PY
     renew)
         [ "$#" -eq 1 ] || usage
         read_config
-        dc up -d --no-build api web
+        # Start missing or stopped services without replacing containers during renewal.
+        dc up -d --no-build --no-recreate api web
         dc run -T --rm --no-deps certbot renew --non-interactive --cert-name flo-ip
         publish_certificate
         ;;
