@@ -34,7 +34,7 @@ internal class HttpApiTransport(private val baseUrl: String = BuildConfig.API_BA
             connection.connectTimeout = 8_000
             connection.readTimeout = 8_000
             connection.setRequestProperty("Accept", "application/json")
-            if (path == "/api/calendar" || path.startsWith("/api/cycle/") || path.startsWith("/api/diary/")) {
+            if (path == "/api/calendar" || path.startsWith("/api/cycle/") || path.startsWith("/api/diary/") || path.startsWith("/api/partner-diary/")) {
                 connection.setRequestProperty("X-Calendar-Date", java.time.LocalDate.now().toString())
             }
             if (bearer != null) connection.setRequestProperty("Authorization", "Bearer $bearer")

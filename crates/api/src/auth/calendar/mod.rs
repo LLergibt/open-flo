@@ -39,13 +39,34 @@ pub(super) struct DiaryEntry {
     data: DiaryInput,
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct PartnerDiaryInput {
+    symptoms: Option<Vec<String>>,
+    events: Option<Vec<String>>,
+    mood: String,
+    pain: Option<i64>,
+    notes: String,
+}
+
+#[derive(Serialize)]
+pub(super) struct PartnerDiaryEntry {
+    date: String,
+    #[serde(flatten)]
+    data: PartnerDiaryInput,
+}
+
 #[derive(Serialize)]
 pub(super) struct CalendarData {
     access: &'static str,
+    viewer_id: String,
     owner_display_name: String,
     as_of: String,
     periods: Vec<Period>,
     entries: Vec<DiaryEntry>,
+    partner_entries: Vec<PartnerDiaryEntry>,
+    partner_diary_enabled: bool,
+    partner_pair_id: Option<String>,
     prediction: serde_json::Value,
     settings: Option<CycleSettings>,
 }
@@ -77,11 +98,21 @@ fn require_tracker(actor: &Authenticated) -> Result<(), AuthError> {
     }
 }
 
+fn verify_viewer(headers: &HeaderMap, actor: &Authenticated) -> Result<(), AuthError> {
+    if let Some(viewer) = headers.get("x-calendar-viewer") {
+        if viewer.to_str().ok() != Some(actor.user.id.as_str()) {
+            return Err(AuthError::forbidden());
+        }
+    }
+    Ok(())
+}
+
 pub(super) async fn calendar(
     State(state): State<AuthState>,
     headers: HeaderMap,
 ) -> Result<Json<CalendarData>, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     let today = request_date(&headers)?;
     Ok(Json(service::calendar(&state, &actor, today).await?))
 }
@@ -92,6 +123,7 @@ pub(super) async fn settings(
     ApiJson(input): ApiJson<SettingsInput>,
 ) -> Result<StatusCode, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     service::settings(&state, &actor, input).await?;
@@ -104,6 +136,7 @@ pub(super) async fn create_period(
     ApiJson(input): ApiJson<PeriodInput>,
 ) -> Result<Response, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     let today = request_date(&headers)?;
@@ -118,6 +151,7 @@ pub(super) async fn update_period(
     ApiJson(input): ApiJson<PeriodInput>,
 ) -> Result<StatusCode, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     valid_id(&id)?;
@@ -131,6 +165,7 @@ pub(super) async fn delete_period(
     Path(id): Path<String>,
 ) -> Result<StatusCode, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     valid_id(&id)?;
@@ -145,6 +180,7 @@ pub(super) async fn save_diary(
     ApiJson(input): ApiJson<DiaryInput>,
 ) -> Result<StatusCode, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     service::save_diary(&state, &actor, &date, input, request_date(&headers)?).await?;
@@ -157,9 +193,35 @@ pub(super) async fn delete_diary(
     Path(date): Path<String>,
 ) -> Result<StatusCode, AuthError> {
     let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
     require_tracker(&actor)?;
     check_origin(&headers, &state.config, false)?;
     service::delete_diary(&state, &actor, &date, request_date(&headers)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(super) async fn save_partner_diary(
+    State(state): State<AuthState>,
+    headers: HeaderMap,
+    Path((pair_id, date)): Path<(String, String)>,
+    ApiJson(input): ApiJson<PartnerDiaryInput>,
+) -> Result<StatusCode, AuthError> {
+    let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
+    check_origin(&headers, &state.config, false)?;
+    service::change_partner_diary(&state, &actor, &pair_id, &date, Some(input), request_date(&headers)?).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+pub(super) async fn delete_partner_diary(
+    State(state): State<AuthState>,
+    headers: HeaderMap,
+    Path((pair_id, date)): Path<(String, String)>,
+) -> Result<StatusCode, AuthError> {
+    let actor = authenticate(&headers, &state).await?;
+    verify_viewer(&headers, &actor)?;
+    check_origin(&headers, &state.config, false)?;
+    service::change_partner_diary(&state, &actor, &pair_id, &date, None, request_date(&headers)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

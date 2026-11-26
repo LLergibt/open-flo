@@ -22,6 +22,8 @@ class AuthRepository internal constructor(
         session != null
     }
 
+    internal suspend fun sessionAccountId(): String? = sessionMutex.withLock { session?.accountId }
+
     suspend fun login(username: String, password: String): Account {
         val attempt = sessionMutex.withLock {
             clearSessionLocked()
@@ -97,9 +99,13 @@ class AuthRepository internal constructor(
         return response
     }
 
-    internal suspend fun calendar(): CalendarData {
-        val value = json(expect(protected("GET", "/api/calendar"), 200))
-        return runCatching { parseCalendar(value) }.getOrElse { throw ApiFailure("invalid_response") }
+    internal suspend fun calendar(): JSONObject = json(expect(protected("GET", "/api/calendar"), 200))
+
+    internal suspend fun savePartnerDiary(pairId: String, date: java.time.LocalDate, entry: DiaryDay) {
+        expect(protected("PUT", "/api/partner-diary/${safeId(pairId)}/$date", entry.json(includeFlow = false)), 204)
+    }
+    internal suspend fun deletePartnerDiary(pairId: String, date: java.time.LocalDate) {
+        expect(protected("DELETE", "/api/partner-diary/${safeId(pairId)}/$date"), 204)
     }
     internal suspend fun saveDiary(date: java.time.LocalDate, entry: DiaryDay) {
         expect(protected("PUT", "/api/diary/$date", entry.json()), 204)
@@ -201,7 +207,7 @@ class AuthRepository internal constructor(
         val allowed = setOf("unauthorized", "forbidden", "invalid_input", "invalid_credentials", "conflict", "rate_limited", "internal_error", "invite_unavailable")
         val error = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("")
         throw ApiFailure(if (error in allowed) error else when (response.status) {
-            401 -> "unauthorized"; 403 -> "forbidden"; 400 -> "invalid_input"; 409 -> "conflict"; 429 -> "rate_limited"; else -> "internal_error"
+            401 -> "unauthorized"; 403 -> "forbidden"; 400 -> "invalid_input"; 409 -> "conflict"; 429 -> "rate_limited"; 500, 502, 503, 504 -> "internal_error"; else -> "unexpected_status"
         })
     }
     private fun string(value: JSONObject, name: String): String = (value.opt(name) as? String)?.takeIf { it.isNotBlank() } ?: throw ApiFailure("invalid_response")

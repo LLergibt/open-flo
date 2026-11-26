@@ -3,7 +3,10 @@ package org.opensourceflo.app
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import java.time.Instant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -12,6 +15,7 @@ internal data class AuthState(
     val user: Account? = null,
     val calendar: CalendarData? = null,
     val calendarError: String? = null,
+    val calendarSavedAt: Instant? = null,
     val ownPair: AccountPair? = null,
     val users: List<Account> = emptyList(),
     val pairs: List<AccountPair> = emptyList(),
@@ -27,7 +31,9 @@ internal data class AuthState(
 )
 
 internal class AuthViewModel(application: Application) : AndroidViewModel(application) {
-    private val repository = (application as FloApplication).authRepository
+    private val app = application as FloApplication
+    private val repository = app.authRepository
+    private val cache = app.calendarCache
     private val mutableState = MutableStateFlow(AuthState(restoringSession = true))
     val state = mutableState.asStateFlow()
 
@@ -38,23 +44,45 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
     }
 
     fun login(username: String, password: String) = runAction {
+        cache.forget()
         val user = repository.login(username, password)
         mutableState.value = AuthState(user = user, busy = true, pendingInvite = mutableState.value.pendingInvite)
         loadDashboard()
     }
 
     fun reload() = runAction {
-        if (mutableState.value.user == null) loadInitialState() else loadDashboard()
+        if (mutableState.value.user == null || mutableState.value.calendarSavedAt != null) loadInitialState() else loadDashboard()
     }
 
     private suspend fun loadInitialState() {
         if (repository.restoreSession()) {
-            loadDashboard()
-            mutableState.value = mutableState.value.copy(restoringSession = false)
+            try {
+                loadDashboard()
+                mutableState.value = mutableState.value.copy(restoringSession = false)
+            } catch (failure: ApiFailure) {
+                if (!failure.transient() || !showCachedCalendar()) {
+                    if (mutableState.value.calendarSavedAt != null) {
+                        mutableState.value = AuthState(restoringSession = true)
+                    }
+                    throw failure
+                }
+            }
         } else {
+            cache.forget()
             mutableState.value = mutableState.value.copy(restoringSession = false)
             mutableState.value = mutableState.value.copy(needsSetup = repository.needsSetup())
         }
+    }
+
+    private fun ApiFailure.transient() = code == "network_error" || code == "internal_error"
+
+    private suspend fun showCachedCalendar(): Boolean {
+        val accountId = repository.sessionAccountId() ?: return false
+        val snapshot = cache.recall(accountId) ?: return false
+        mutableState.value = AuthState(
+            user = snapshot.account, calendar = snapshot.data, calendarSavedAt = snapshot.savedAt, busy = true
+        )
+        return true
     }
 
     fun logout() {
@@ -64,7 +92,10 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
         mutableState.value = AuthState(busy = true, needsSetup = needsSetup, pendingInvite = pending)
         viewModelScope.launch {
             var error: String? = null
-            try { repository.logout() }
+            try {
+                withContext(NonCancellable) { cache.forget() }
+                repository.logout()
+            }
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: ApiFailure) {
                 error = if (failure.code == "session_storage") authErrorMessage(failure.code)
@@ -90,6 +121,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
         repository.resetPassword(user.id, password)
         if (user.id == mutableState.value.user?.id) {
             repository.clearSession()
+            cache.forget()
             mutableState.value = AuthState(busy = true, notice = "Пароль изменён. Войдите снова.")
         } else {
             loadDashboard()
@@ -109,6 +141,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
     }
     fun unlinkOwnPair() = runAction {
         repository.unlinkOwnPair()
+        cache.forget()
         loadDashboard()
         mutableState.value = mutableState.value.copy(notice = "Связь прекращена.")
     }
@@ -124,6 +157,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
             if (failure.code == "invalid_credentials") throw ApiFailure("current_password_incorrect")
             throw failure
         }
+        cache.forget()
         mutableState.value = AuthState(busy = true, notice = "Аккаунт удалён.")
     }
     fun changeOwnPassword(current: String, newPassword: String) = runAction {
@@ -132,6 +166,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
             if (failure.code == "invalid_credentials") throw ApiFailure("current_password_incorrect")
             throw failure
         }
+        cache.forget()
         mutableState.value = AuthState(busy = true, notice = "Пароль изменён. Войдите снова.", pendingInvite = mutableState.value.pendingInvite)
     }
     fun generateInvite(role: AccountRole? = null) = runAction {
@@ -156,6 +191,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
         val invitation = mutableState.value.pendingInvite ?: throw ApiFailure("invite_unavailable")
         repository.registerInvite(invitation.token, username, name, password)
         mutableState.value = AuthState(busy = true, notice = "Аккаунт создан. Если вход не завершится, войдите с новым паролем.")
+        cache.forget()
         val user = repository.login(username, password)
         mutableState.value = AuthState(user = user, busy = true, notice = "Аккаунт создан. Приглашение принято.")
         loadDashboard()
@@ -168,7 +204,13 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
         loadDashboard()
     }
 
-    fun refreshCalendar() = runAction { loadCalendar() }
+    fun refreshCalendar() = runAction {
+        if (mutableState.value.calendarSavedAt != null) loadInitialState() else loadCalendar()
+    }
+    fun savePartnerDiary(pairId: String, date: java.time.LocalDate, entry: DiaryDay) =
+        mutateCalendar(AccountRole.PARTNER) { repository.savePartnerDiary(pairId, date, entry) }
+    fun deletePartnerDiary(pairId: String, date: java.time.LocalDate) =
+        mutateCalendar(AccountRole.PARTNER) { repository.deletePartnerDiary(pairId, date) }
     fun saveDiary(date: java.time.LocalDate, entry: DiaryDay) = mutateCalendar { repository.saveDiary(date, entry) }
     fun deleteDiary(date: java.time.LocalDate) = mutateCalendar { repository.deleteDiary(date) }
     fun savePeriod(id: String?, start: java.time.LocalDate, end: java.time.LocalDate?) =
@@ -177,34 +219,53 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
     fun saveCycleSettings(length: Int?, duration: Int, method: String, context: String) =
         mutateCalendar { repository.saveCycleSettings(length, duration, method, context) }
 
-    private fun mutateCalendar(action: suspend () -> Unit) = runAction {
-        if (mutableState.value.user?.role != AccountRole.TRACKER || mutableState.value.calendar?.owner != true) {
-            throw ApiFailure("forbidden")
+    private fun mutateCalendar(role: AccountRole = AccountRole.TRACKER, action: suspend () -> Unit) = runAction {
+        val current = mutableState.value
+        val calendar = current.calendar ?: throw ApiFailure("forbidden")
+        if (current.calendarSavedAt != null || current.user?.role != role ||
+            calendar.owner != (role == AccountRole.TRACKER) ||
+            role == AccountRole.PARTNER && calendar.partnerPairId == null
+        ) throw ApiFailure("forbidden")
+        try {
+            action()
+        } catch (failure: ApiFailure) {
+            if (failure.transient()) showCachedCalendar()
+            if (failure.code == "forbidden") {
+                cache.forget()
+                mutableState.value = mutableState.value.copy(calendar = null, calendarSavedAt = null)
+            }
+            throw failure
         }
-        action()
         loadCalendar()
         mutableState.value = mutableState.value.copy(notice = "Изменения сохранены.")
     }
+
     private suspend fun loadCalendar() {
-        val role = mutableState.value.user?.role ?: return
-        if (role == AccountRole.ADMIN) return
-        if (role == AccountRole.PARTNER) mutableState.value = mutableState.value.copy(calendar = null)
+        val account = mutableState.value.user ?: return
+        if (account.role == AccountRole.ADMIN) return
         try {
-            val next = repository.calendar()
-            if (next.owner != (role == AccountRole.TRACKER)) throw ApiFailure("invalid_response")
-            mutableState.value = mutableState.value.copy(calendar = next, calendarError = null)
+            val payload = repository.calendar()
+            val next = try { parseCalendar(payload) } catch (_: Exception) { throw ApiFailure("invalid_response") }
+            if (next.owner != (account.role == AccountRole.TRACKER) ||
+                next.viewerId != null && next.viewerId != account.id
+            ) throw ApiFailure("forbidden")
+            if (next.viewerId == account.id) cache.remember(account, payload)
+            mutableState.value = mutableState.value.copy(calendar = next, calendarError = null, calendarSavedAt = null)
         } catch (failure: ApiFailure) {
             if (failure.code == "unauthorized") throw failure
-            val message = if (failure.code == "forbidden" && role == AccountRole.PARTNER) {
+            if (failure.transient() && showCachedCalendar()) return
+            if (failure.code == "forbidden") cache.forget()
+            val message = if (failure.code == "forbidden" && account.role == AccountRole.PARTNER) {
                 "Календарь появится после привязки к владельцу."
             } else authErrorMessage(failure.code)
-            mutableState.value = mutableState.value.copy(calendar = null, calendarError = message)
+            mutableState.value = mutableState.value.copy(calendar = null, calendarError = message, calendarSavedAt = null)
         }
     }
 
     private suspend fun loadDashboard() {
         val user = repository.me()
         if (user.role == AccountRole.ADMIN) {
+            cache.forget()
             val users = repository.users()
             val pairs = repository.pairs()
             mutableState.value = mutableState.value.copy(user = user, users = users, pairs = pairs, ownPair = null)
@@ -227,6 +288,7 @@ internal class AuthViewModel(application: Application) : AndroidViewModel(applic
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: ApiFailure) {
                 if (failure.code == "unauthorized") {
+                    cache.forget()
                     mutableState.value = AuthState(busy = true, error = authErrorMessage(failure.code), pendingInvite = mutableState.value.pendingInvite)
                 } else mutableState.value = mutableState.value.copy(error = authErrorMessage(failure.code), pendingInvite = if (failure.code == "invite_unavailable") null else mutableState.value.pendingInvite)
             } catch (_: Exception) {

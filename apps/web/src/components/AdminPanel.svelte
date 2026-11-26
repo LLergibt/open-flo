@@ -278,7 +278,7 @@
               <p class="record-person"><strong>{pair.partner.display_name}</strong> <span class="tag">Партнёр</span></p>
               <p class="detail">@{pair.partner.username}{pair.partner.is_active ? '' : ' · Отключён'}</p>
               {#if confirmPairId === pair.id}
-                <div class="confirmation"><p>Разорвать эту пару? Участники больше не смогут получать новые данные через эту связь.</p><div class="actions compact"><button class="small" type="button" disabled={locked} onclick={() => void unlink(pair)}>{busy === `pair-${pair.id}` ? 'Разрываем…' : 'Да, разорвать пару'}</button><button class="secondary small" type="button" disabled={locked} onclick={() => { confirmPairId = null; }}>Отмена</button></div></div>
+                <div class="confirmation"><p>Разорвать эту пару? Доступ через эту связь прекратится, а записи партнёра в этой паре будут удалены.</p><div class="actions compact"><button class="small" type="button" disabled={locked} onclick={() => void unlink(pair)}>{busy === `pair-${pair.id}` ? 'Разрываем…' : 'Да, разорвать пару'}</button><button class="secondary small" type="button" disabled={locked} onclick={() => { confirmPairId = null; }}>Отмена</button></div></div>
               {:else}
                 <button class="secondary small spaced" type="button" disabled={locked} onclick={() => { confirmPairId = pair.id; }}>Разорвать пару</button>
               {/if}

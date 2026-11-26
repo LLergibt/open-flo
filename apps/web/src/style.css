@@ -212,3 +212,8 @@ textarea:focus-visible { outline: 3px solid #303647; outline-offset: 4px; }
   .calendar-toolbar { margin-block: 12px; }
   .day-dialog { margin: auto 0 0; width: 100%; max-width: 100%; max-height: 89dvh; box-shadow: none; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
 }
+
+.diary-owner { background: #fce6f2; }
+.diary-partner { background: #e5effc; }
+.owner-mark { color: #91275e; }
+.partner-mark { color: #225a9b; }

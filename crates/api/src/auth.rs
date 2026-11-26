@@ -371,6 +371,11 @@ pub(crate) fn router(pool: SqlitePool, config: AuthConfig) -> Router {
             axum::routing::put(calendar::update_period).delete(calendar::delete_period),
         )
         .route(
+            "/api/partner-diary/{pair_id}/{date}",
+            axum::routing::put(calendar::save_partner_diary).delete(calendar::delete_partner_diary)
+                .layer(axum::extract::DefaultBodyLimit::max(16_384)),
+        )
+        .route(
             "/api/diary/{date}",
             axum::routing::put(calendar::save_diary)
                 .layer(axum::extract::DefaultBodyLimit::max(24 * 1024))

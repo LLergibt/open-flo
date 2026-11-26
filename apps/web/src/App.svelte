@@ -9,13 +9,15 @@
   import InviteFlow from './components/InviteFlow.svelte';
   import { consumeInviteFragment } from './lib/invites';
   import { api, ApiError, errorMessage, onSessionExpired } from './lib/api';
+  import { forgetCalendar, recallCalendar, unavailable, type CalendarSnapshot } from './lib/offline-calendar';
   import { roleNames } from './lib/types';
   import type { User } from './lib/types';
 
   let pairRevision = $state(0);
   let user = $state<User | null>(null);
   let pendingInvite = $state<string | null>(null);
-  let phase = $state<'loading' | 'ready' | 'error'>('loading');
+  let phase = $state<'loading' | 'ready' | 'error' | 'offline'>('loading');
+  let offlineSnapshot = $state<CalendarSnapshot | null>(null);
   let needsSetup = $state(false);
   let restoring = $state(false);
   let loggingOut = $state(false);
@@ -24,16 +26,26 @@
   let notice = $state('');
   let mounted = false;
   let generation = 0;
+  const logoutKey = 'flo-local-logout-pending';
+
+  function rememberPendingLogout(pending: boolean) {
+    try {
+      if (pending) localStorage.setItem(logoutKey, '1');
+      else localStorage.removeItem(logoutKey);
+    } catch { /* Browser storage may be unavailable. */ }
+  }
 
   function signedOut(message: string) {
     generation += 1;
     user = null;
+    offlineSnapshot = null;
+    void forgetCalendar();
     phase = 'ready';
     notice = message;
   }
 
   async function restore() {
-    if (restoring) return;
+    if (restoring || retryLogout || loggingOut) return;
     restoring = true;
     phase = 'loading';
     error = '';
@@ -42,6 +54,7 @@
       const setup = await api.setupStatus();
       if (!mounted || current !== generation) return;
       needsSetup = setup;
+      if (setup) { user = null; void forgetCalendar(); }
       if (!setup) {
         try {
           const restored = await api.me();
@@ -51,13 +64,17 @@
           if (!(failure instanceof ApiError) || failure.status !== 401) throw failure;
           if (!mounted || current !== generation) return;
           user = null;
+          void forgetCalendar();
         }
       }
-      if (mounted && current === generation) phase = 'ready';
+      if (mounted && current === generation) { offlineSnapshot = null; phase = 'ready'; }
     } catch (failure) {
       if (mounted && current === generation) {
+        const snapshot = !retryLogout && unavailable(failure) ? await recallCalendar(user ?? undefined) : null;
+        if (!mounted || current !== generation) return;
+        offlineSnapshot = snapshot;
         error = errorMessage(failure);
-        phase = 'error';
+        phase = snapshot ? 'offline' : 'error';
       }
     } finally {
       restoring = false;
@@ -66,6 +83,8 @@
 
   function loggedIn(account: User) {
     generation += 1;
+    offlineSnapshot = null;
+    void forgetCalendar();
     user = account;
     notice = '';
     retryLogout = false;
@@ -87,9 +106,13 @@
   async function logout() {
     if (loggingOut) return;
     loggingOut = true;
-    notice = '';
+    retryLogout = true;
+    rememberPendingLogout(true);
+    signedOut('');
+    await forgetCalendar();
     try {
       await api.logout();
+      rememberPendingLogout(false);
       retryLogout = false;
       signedOut('Вы вышли из аккаунта.');
     } catch (failure) {
@@ -108,8 +131,23 @@
     const unsubscribe = onSessionExpired(() => {
       if (user) signedOut('Сессия завершена. Войдите снова.');
     });
-    void restore();
+    try { retryLogout = localStorage.getItem(logoutKey) === '1'; } catch { /* Storage may be unavailable. */ }
+    if (retryLogout) signedOut('Подтвердите выход после восстановления подключения.');
+    else void restore();
+    const logoutChanged = (event: StorageEvent) => {
+      if (event.key !== logoutKey) return;
+      retryLogout = event.newValue === '1';
+      if (retryLogout) signedOut('Подтвердите выход после восстановления подключения.');
+    };
+    window.addEventListener('storage', logoutChanged);
+    const reconnect = () => { if (phase === 'offline' || phase === 'error') void restore(); };
+    const disconnect = () => { if (phase === 'ready' && user && !loggingOut) void restore(); };
+    window.addEventListener('online', reconnect);
+    window.addEventListener('offline', disconnect);
     return () => {
+      window.removeEventListener('storage', logoutChanged);
+      window.removeEventListener('online', reconnect);
+      window.removeEventListener('offline', disconnect);
       mounted = false;
       generation += 1;
       unsubscribe();
@@ -132,6 +170,10 @@
     {#key user.id + ':' + pairRevision}<CalendarWorkspace {user} disabled={loggingOut} />{/key}
   {/if}
 
+  {#if phase === 'offline' && offlineSnapshot}
+    <CalendarWorkspace user={offlineSnapshot.account} offlineData={offlineSnapshot.data} savedAt={offlineSnapshot.savedAt} onreconnect={restore} />
+  {/if}
+
   <section class="window" aria-labelledby="screen-title">
     <div class="titlebar" aria-hidden="true"><span>{pendingInvite ? 'invite.exe' : user ? 'profile.exe' : 'auth.exe'}</span><span class="window-controls">─ □ ×</span></div>
     <div class="window-body">
@@ -139,6 +181,9 @@
       {#if phase === 'loading'}
         <h1 id="screen-title">Проверяем сессию</h1>
         <p class="intro" role="status">Подключаемся к вашему серверу…</p>
+      {:else if phase === 'offline'}
+        <h1 id="screen-title">Локальная копия</h1>
+        <button class="secondary small" type="button" onclick={() => void logout()} disabled={loggingOut}>Выйти и удалить копию</button>
       {:else if phase === 'error'}
         <h1 id="screen-title">Сервер недоступен</h1>
         <p class="feedback error" role="alert">{error}</p>
@@ -168,7 +213,7 @@
         {#if user.role === 'admin'}
           <p class="detail">Создавайте аккаунты и связывайте владельца дневника с партнёром в панели ниже.</p>
         {:else}
-          {#key user.id}<MemberPanel {user} disabled={loggingOut} onpairchange={() => { pairRevision += 1; }} />{/key}
+          {#key user.id}<MemberPanel {user} disabled={loggingOut} onpairchange={() => { void forgetCalendar(); pairRevision += 1; }} />{/key}
         {/if}
         <PasswordForm disabled={loggingOut} onchanged={() => signedOut('Пароль изменён. Все ваши сессии завершены. Войдите заново с новым паролем.')} />
         <DeleteAccount disabled={loggingOut} onremoved={() => { pendingInvite = null; signedOut('Аккаунт удалён.'); }} />

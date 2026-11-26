@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
 private fun AuthApplication(model: AuthViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (state.user?.role == AccountRole.PARTNER) model.refreshCalendar()
+        if (state.user?.role in listOf(AccountRole.PARTNER, AccountRole.TRACKER)) model.refreshCalendar()
     }
     Surface(color = Paper, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
@@ -82,23 +82,29 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                     } else if (state.user == null) {
                         RetroWindow("auth.exe", if (state.needsSetup) "Настройка сервера" else "Вход в аккаунт") { LoginScreen(state, model) }
                     } else {
-                        if (state.user?.role != AccountRole.ADMIN && state.pendingInvite == null) {
+                        if (state.user?.role != AccountRole.ADMIN && (state.pendingInvite == null || state.calendarSavedAt != null)) {
                             RetroWindow("calendar.exe", if (state.user?.role == AccountRole.PARTNER) "Календарь партнёра" else "Мой календарь") {
                                 CalendarScreen(state, model)
                             }
                         }
-                        RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
+                        if (state.calendarSavedAt != null) {
+                            RetroWindow("profile.exe", "Локальная копия") {
+                                RetroButton("Выйти и удалить копию", enabled = !state.busy, secondary = true, onClick = model::logout)
+                            }
+                        } else {
+                            RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
+                        }
                         if (state.user?.role == AccountRole.ADMIN) RetroWindow("admin.exe", "Администрирование") { AdminScreen(state, model) }
                     }
                     if (state.user?.role == AccountRole.ADMIN) RetroWindow("invites.exe", "Ссылки регистрации") { OwnerInviteScreen(state, model, admin = true) }
-                    if (state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
+                    if (state.calendarSavedAt == null && state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
                         RetroWindow("invite.exe", "Пригласить партнёра") { OwnerInviteScreen(state, model) }
                     }
-                    if (!state.restoringSession && !state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
+                    if (state.calendarSavedAt == null && !state.restoringSession && !state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
                         RetroWindow("invite.exe", "Приглашение партнёра") { JoinInviteScreen(state, model) }
                     }
-                    if (state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
-                    if (state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
+                    if (state.calendarSavedAt == null && state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
+                    if (state.calendarSavedAt == null && state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
                 }
             }
         }

@@ -24,6 +24,16 @@ struct DiaryRow {
     notes: String,
 }
 
+#[derive(FromRow)]
+struct PartnerDiaryRow {
+    date: String,
+    symptoms: String,
+    events: String,
+    mood: String,
+    pain: i64,
+    notes: String,
+}
+
 pub(super) async fn live_actor(
     tx: &mut Transaction<'_, Sqlite>,
     actor: &Authenticated,
@@ -181,5 +191,89 @@ pub(super) async fn delete_diary(
         .execute(&mut **tx)
         .await
         .map_err(|_| AuthError::internal())?;
+    Ok(())
+}
+
+pub(super) async fn active_pair_id(
+    tx: &mut Transaction<'_, Sqlite>,
+    tracker: &str,
+) -> Result<Option<String>, AuthError> {
+    sqlx::query_scalar("SELECT p.id FROM pairs p JOIN users u ON u.id=p.partner_id WHERE p.tracker_id=? AND u.is_active=1 AND u.role='partner'")
+        .bind(tracker).fetch_optional(&mut **tx).await.map_err(|_| AuthError::internal())
+}
+
+pub(super) async fn partner_diary(
+    tx: &mut Transaction<'_, Sqlite>,
+    pair: &str,
+) -> Result<Vec<PartnerDiaryEntry>, AuthError> {
+    let rows = sqlx::query_as::<_, PartnerDiaryRow>(
+        "SELECT date,symptoms,events,mood,pain,notes FROM partner_diary_entries WHERE pair_id=? ORDER BY date LIMIT 1000"
+    )
+    .bind(pair)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(|_| AuthError::internal())?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(PartnerDiaryEntry {
+                date: row.date,
+                data: PartnerDiaryInput {
+                    symptoms: Some(serde_json::from_str(&row.symptoms).map_err(|_| AuthError::internal())?),
+                    events: Some(serde_json::from_str(&row.events).map_err(|_| AuthError::internal())?),
+                    mood: row.mood,
+                    pain: Some(row.pain),
+                    notes: row.notes,
+                },
+            })
+        })
+        .collect()
+}
+
+pub(super) async fn change_partner_diary(
+    tx: &mut Transaction<'_, Sqlite>,
+    pair: &str,
+    date: &str,
+    input: Option<PartnerDiaryInput>,
+) -> Result<(), AuthError> {
+    if let Some(input) = input {
+        let symptoms = input.symptoms.as_ref().map(serde_json::to_string)
+            .transpose().map_err(|_| AuthError::internal())?;
+        let events = input.events.as_ref().map(serde_json::to_string)
+            .transpose().map_err(|_| AuthError::internal())?;
+        // A previous client may still send only mood and notes.
+        let result = sqlx::query(
+            "INSERT INTO partner_diary_entries(pair_id,date,symptoms,events,mood,pain,notes)
+             SELECT ?,?,COALESCE(?,'[]'),COALESCE(?,'[]'),?,COALESCE(?,0),?
+             WHERE EXISTS(SELECT 1 FROM partner_diary_entries WHERE pair_id=? AND date=?)
+                OR (SELECT COUNT(*) FROM partner_diary_entries WHERE pair_id=?) < 1000
+             ON CONFLICT(pair_id,date) DO UPDATE SET
+                symptoms=COALESCE(?,partner_diary_entries.symptoms),
+                events=COALESCE(?,partner_diary_entries.events),
+                pain=COALESCE(?,partner_diary_entries.pain),
+                mood=excluded.mood,notes=excluded.notes"
+        )
+        .bind(pair)
+        .bind(date)
+        .bind(symptoms.as_deref())
+        .bind(events.as_deref())
+        .bind(input.mood)
+        .bind(input.pain)
+        .bind(input.notes)
+        .bind(pair)
+        .bind(date)
+        .bind(pair)
+        .bind(symptoms.as_deref())
+        .bind(events.as_deref())
+        .bind(input.pain)
+        .execute(&mut **tx)
+        .await
+        .map_err(|_| AuthError::internal())?;
+        if result.rows_affected() == 0 {
+            return Err(AuthError::conflict());
+        }
+    } else {
+        sqlx::query("DELETE FROM partner_diary_entries WHERE pair_id=? AND date=?")
+            .bind(pair).bind(date).execute(&mut **tx).await.map_err(|_| AuthError::internal())?;
+    }
     Ok(())
 }

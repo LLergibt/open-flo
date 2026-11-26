@@ -3,6 +3,7 @@
   import { dateTitle, inRange, monthDays, monthTitle, shiftMonth } from '../../lib/dates';
   let { data, month = $bindable(), selected = $bindable(), ondayselect, disabled = false }: { data: CalendarData; month: string; selected: string; ondayselect: (day: string) => void; disabled?: boolean } = $props();
   const loggedDates = $derived(new Set(data.entries.map((entry) => entry.date)));
+  const partnerDates = $derived(new Set(data.partner_entries?.map((entry) => entry.date)));
   const days = $derived(monthDays(month));
   const cycles = $derived(data.prediction.additional_cycles ?? []);
 
@@ -26,7 +27,8 @@
       actual ? 'отмеченные месячные' : forecast ? 'прогноз месячных' : '',
       retrospective ? 'оценка фертильного окна прошлого цикла' : fertile ? 'предполагаемое фертильное окно' : '',
       ovulation ? 'предполагаемая овуляция' : '',
-      loggedDates.has(day) ? 'есть запись дневника' : '',
+      loggedDates.has(day) ? 'есть запись владельца дневника' : '',
+      partnerDates.has(day) ? 'есть запись партнёра' : '',
     ].filter(Boolean).join(', ');
     return { actual, forecast, fertile, ovulation, retrospective, label };
   }
@@ -47,7 +49,7 @@
       aria-label={state.label} aria-pressed={selected === day} aria-current={day === data.as_of ? 'date' : undefined}
       disabled={disabled || day < '2000-01-01' || day > '2100-12-31'}
       onclick={() => { selected = day; month = day.slice(0, 7); ondayselect(day); }}>
-      <span>{Number(day.slice(-2))}{#if loggedDates.has(day)}<sup aria-hidden="true">·</sup>{/if}</span>
+      <span>{Number(day.slice(-2))}{#if loggedDates.has(day)}<sup class="owner-mark" aria-hidden="true">●</sup>{/if}{#if partnerDates.has(day)}<sup class="partner-mark" aria-hidden="true">◆</sup>{/if}</span>
       {#if state.actual || state.forecast || state.fertile}
         <span class="day-mark" aria-hidden="true">
           {state.actual ? '●' : state.forecast ? '┄' : ''}{state.ovulation ? (state.retrospective ? '◌' : '○') : state.fertile ? (state.retrospective ? '≈' : '~') : ''}
@@ -62,5 +64,6 @@
   <span><i class="legend-fertile" aria-hidden="true"></i>Фертильное окно · оценка</span>
   <span>○ Овуляция · оценка</span>
   <span>≈ / ◌ Оценки прошлых циклов</span>
-  <span>· Запись дневника</span>
+  <span><b class="owner-mark" aria-hidden="true">●</b> Запись владельца</span>
+  {#if data.partner_diary_enabled}<span><b class="partner-mark" aria-hidden="true">◆</b> Запись партнёра</span>{/if}
 </div>

@@ -1,5 +1,5 @@
 import { isCalendar, isPeriod } from './calendar.ts';
-import type { CalendarData, CycleSettings, DiaryInput } from './calendar.ts';
+import type { CalendarData, CycleSettings, DiaryInput, PartnerDiaryInput } from './calendar.ts';
 import { localToday } from './dates.ts';
 import { isPair, isRecord, isUser } from './types.ts';
 import type { CreateUser, Invite, InvitePreview, InviteRegistration, Pair, User } from './types.ts';
@@ -127,31 +127,39 @@ function parseInvite(value: unknown): Invite {
   return { token: value.token, url: value.url, expires_at: value.expires_at };
 }
 
-function calendarRequest(method = 'GET', body?: unknown): RequestInit {
-  return { method, headers: { 'X-Calendar-Date': localToday() }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
+function calendarRequest(method = 'GET', body?: unknown, viewer?: string): RequestInit {
+  const headers = new Headers({ 'X-Calendar-Date': localToday() });
+  if (viewer) headers.set('X-Calendar-Viewer', viewer);
+  return { method, headers, ...(body === undefined ? {} : { body: JSON.stringify(body) }) };
 }
 
 export const api = {
-  async calendar(): Promise<CalendarData> {
-    const value = await authenticated('/api/calendar', calendarRequest());
+  async calendar(viewer?: string): Promise<CalendarData> {
+    const value = await authenticated('/api/calendar', calendarRequest('GET', undefined, viewer));
     if (!isCalendar(value)) throw new ApiError('invalid_response');
     return value;
   },
-  async saveCycleSettings(input: CycleSettings): Promise<void> {
-    await authenticated('/api/cycle/settings', calendarRequest('PUT', input));
+  async saveCycleSettings(input: CycleSettings, viewer?: string): Promise<void> {
+    await authenticated('/api/cycle/settings', calendarRequest('PUT', input, viewer));
   },
-  async savePeriod(input: { start_date: string; end_date: string | null }, id?: string): Promise<void> {
-    const value = await authenticated('/api/cycle/periods' + (id ? '/' + encodeURIComponent(id) : ''), calendarRequest(id ? 'PUT' : 'POST', input));
+  async savePeriod(input: { start_date: string; end_date: string | null }, id?: string, viewer?: string): Promise<void> {
+    const value = await authenticated('/api/cycle/periods' + (id ? '/' + encodeURIComponent(id) : ''), calendarRequest(id ? 'PUT' : 'POST', input, viewer));
     if (!id && !isPeriod(value)) throw new ApiError('invalid_response');
   },
-  async deletePeriod(id: string): Promise<void> {
-    await authenticated('/api/cycle/periods/' + encodeURIComponent(id), calendarRequest('DELETE'));
+  async deletePeriod(id: string, viewer?: string): Promise<void> {
+    await authenticated('/api/cycle/periods/' + encodeURIComponent(id), calendarRequest('DELETE', undefined, viewer));
   },
-  async saveDiary(date: string, input: DiaryInput): Promise<void> {
-    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('PUT', input));
+  async saveDiary(date: string, input: DiaryInput, viewer?: string): Promise<void> {
+    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('PUT', input, viewer));
   },
-  async deleteDiary(date: string): Promise<void> {
-    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('DELETE'));
+  async deleteDiary(date: string, viewer?: string): Promise<void> {
+    await authenticated('/api/diary/' + encodeURIComponent(date), calendarRequest('DELETE', undefined, viewer));
+  },
+  async savePartnerDiary(pair: string, date: string, input: PartnerDiaryInput, viewer: string): Promise<void> {
+    await authenticated('/api/partner-diary/' + encodeURIComponent(pair) + '/' + encodeURIComponent(date), calendarRequest('PUT', input, viewer));
+  },
+  async deletePartnerDiary(pair: string, date: string, viewer: string): Promise<void> {
+    await authenticated('/api/partner-diary/' + encodeURIComponent(pair) + '/' + encodeURIComponent(date), calendarRequest('DELETE', undefined, viewer));
   },
   async setupStatus(): Promise<boolean> {
     const value = await send('/api/setup/status');
