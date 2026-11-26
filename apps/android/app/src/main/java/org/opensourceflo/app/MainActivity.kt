@@ -71,7 +71,15 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                         Text("flo/local", fontFamily = BrandFont, fontSize = if (mobile) 34.sp else 40.sp, modifier = Modifier.padding(end = 12.dp))
                         Text(if (state.user != null && state.user?.role != AccountRole.ADMIN) "КАЛЕНДАРЬ" else "АВТОРИЗАЦИЯ", modifier = Modifier.border(1.dp, Ink).padding(7.dp, 5.dp), fontSize = 9.sp)
                     }
-                    if (state.user == null) {
+                    if (state.restoringSession && state.user == null) {
+                        RetroWindow("auth.exe", "Восстановление сессии") {
+                            Notice(state)
+                            if (!state.busy) {
+                                RetroButton("Повторить", onClick = model::reload)
+                                RetroButton("Выйти", secondary = true, onClick = model::logout)
+                            }
+                        }
+                    } else if (state.user == null) {
                         RetroWindow("auth.exe", if (state.needsSetup) "Настройка сервера" else "Вход в аккаунт") { LoginScreen(state, model) }
                     } else {
                         if (state.user?.role != AccountRole.ADMIN && state.pendingInvite == null) {
@@ -86,15 +94,11 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                     if (state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
                         RetroWindow("invite.exe", "Пригласить партнёра") { OwnerInviteScreen(state, model) }
                     }
-                    if (!state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
+                    if (!state.restoringSession && !state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
                         RetroWindow("invite.exe", "Приглашение партнёра") { JoinInviteScreen(state, model) }
                     }
                     if (state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
                     if (state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
-                    Text(
-                        "Токены хранятся только в памяти. После перезапуска приложения потребуется войти снова.",
-                        modifier = Modifier.widthIn(max = 470.dp), fontSize = 11.sp, lineHeight = 18.7.sp
-                    )
                 }
             }
         }

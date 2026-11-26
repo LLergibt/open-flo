@@ -1,6 +1,7 @@
 package org.opensourceflo.app
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -16,6 +17,7 @@ internal data class AuthState(
     val pairs: List<AccountPair> = emptyList(),
     val busy: Boolean = true,
     val needsSetup: Boolean = false,
+    val restoringSession: Boolean = false,
     val error: String? = null,
     val notice: String? = null,
     val createdUserVersion: Int = 0,
@@ -24,17 +26,15 @@ internal data class AuthState(
     val generatedInvite: GeneratedInvitation? = null
 )
 
-internal class AuthViewModel : ViewModel() {
-    private val repository = AuthRepository()
-    private val mutableState = MutableStateFlow(AuthState())
+internal class AuthViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = (application as FloApplication).authRepository
+    private val mutableState = MutableStateFlow(AuthState(restoringSession = true))
     val state = mutableState.asStateFlow()
 
     private var initialized = false
 
     init {
-        runAction {
-            mutableState.value = mutableState.value.copy(needsSetup = repository.needsSetup())
-        }
+        runAction { loadInitialState() }
     }
 
     fun login(username: String, password: String) = runAction {
@@ -44,9 +44,17 @@ internal class AuthViewModel : ViewModel() {
     }
 
     fun reload() = runAction {
-        if (mutableState.value.user == null) {
+        if (mutableState.value.user == null) loadInitialState() else loadDashboard()
+    }
+
+    private suspend fun loadInitialState() {
+        if (repository.restoreSession()) {
+            loadDashboard()
+            mutableState.value = mutableState.value.copy(restoringSession = false)
+        } else {
+            mutableState.value = mutableState.value.copy(restoringSession = false)
             mutableState.value = mutableState.value.copy(needsSetup = repository.needsSetup())
-        } else loadDashboard()
+        }
     }
 
     fun logout() {
@@ -58,7 +66,10 @@ internal class AuthViewModel : ViewModel() {
             var error: String? = null
             try { repository.logout() }
             catch (cancelled: CancellationException) { throw cancelled }
-            catch (_: Exception) { error = "Вы вышли на этом устройстве. Не удалось подтвердить завершение серверной сессии." }
+            catch (failure: ApiFailure) {
+                error = if (failure.code == "session_storage") authErrorMessage(failure.code)
+                else "Вы вышли на этом устройстве. Не удалось подтвердить завершение серверной сессии."
+            }
             finally { mutableState.value = AuthState(busy = false, needsSetup = needsSetup, error = error, notice = if (error == null) "Вы вышли из аккаунта." else null, pendingInvite = pending) }
         }
     }
@@ -216,7 +227,6 @@ internal class AuthViewModel : ViewModel() {
             catch (cancelled: CancellationException) { throw cancelled }
             catch (failure: ApiFailure) {
                 if (failure.code == "unauthorized") {
-                    repository.clearSession()
                     mutableState.value = AuthState(busy = true, error = authErrorMessage(failure.code), pendingInvite = mutableState.value.pendingInvite)
                 } else mutableState.value = mutableState.value.copy(error = authErrorMessage(failure.code), pendingInvite = if (failure.code == "invite_unavailable") null else mutableState.value.pendingInvite)
             } catch (_: Exception) {
