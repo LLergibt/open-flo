@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.*
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -31,10 +32,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 
 internal val Ink = Color(0xFF303647)
-internal val Paper = Color(0xFFF8E8D8)
-internal val Panel = Color(0xFFFFF9F1)
-internal val Accent = Color(0xFFF5D0B0)
+internal val Paper = Color(0xFFEEE3FA)
+internal val Panel = Color(0xFFFCF5FF)
+internal val Accent = Color(0xFFE3C7F5)
 internal val ErrorInk = Color(0xFF842E3D)
+private val BrandFont = FontFamily(Font(R.font.micro_5))
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -56,7 +58,7 @@ class MainActivity : ComponentActivity() {
 private fun AuthApplication(model: AuthViewModel = viewModel()) {
     val state by model.state.collectAsStateWithLifecycle()
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
-        if (state.user?.role == AccountRole.PARTNER) model.refreshCalendar()
+        if (state.user?.role in listOf(AccountRole.PARTNER, AccountRole.TRACKER)) model.refreshCalendar()
     }
     Surface(color = Paper, modifier = Modifier.fillMaxSize()) {
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
@@ -66,33 +68,43 @@ private fun AuthApplication(model: AuthViewModel = viewModel()) {
                     start = if (mobile) 18.dp else 24.dp, end = if (mobile) 22.dp else 24.dp, top = 28.dp, bottom = 24.dp
                 ), verticalArrangement = Arrangement.spacedBy(24.dp)) {
                     FlowRow(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("flo / local", fontSize = 19.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1).sp, modifier = Modifier.padding(end = 12.dp))
+                        Text("flo/local", fontFamily = BrandFont, fontSize = if (mobile) 34.sp else 40.sp, modifier = Modifier.padding(end = 12.dp))
                         Text(if (state.user != null && state.user?.role != AccountRole.ADMIN) "КАЛЕНДАРЬ" else "АВТОРИЗАЦИЯ", modifier = Modifier.border(1.dp, Ink).padding(7.dp, 5.dp), fontSize = 9.sp)
                     }
-                    if (state.user == null) {
+                    if (state.restoringSession && state.user == null) {
+                        RetroWindow("auth.exe", "Восстановление сессии") {
+                            Notice(state)
+                            if (!state.busy) {
+                                RetroButton("Повторить", onClick = model::reload)
+                                RetroButton("Выйти", secondary = true, onClick = model::logout)
+                            }
+                        }
+                    } else if (state.user == null) {
                         RetroWindow("auth.exe", if (state.needsSetup) "Настройка сервера" else "Вход в аккаунт") { LoginScreen(state, model) }
                     } else {
-                        if (state.user?.role != AccountRole.ADMIN && state.pendingInvite == null) {
+                        if (state.user?.role != AccountRole.ADMIN && (state.pendingInvite == null || state.calendarSavedAt != null)) {
                             RetroWindow("calendar.exe", if (state.user?.role == AccountRole.PARTNER) "Календарь партнёра" else "Мой календарь") {
                                 CalendarScreen(state, model)
                             }
                         }
-                        RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
+                        if (state.calendarSavedAt != null) {
+                            RetroWindow("profile.exe", "Локальная копия") {
+                                RetroButton("Выйти и удалить копию", enabled = !state.busy, secondary = true, onClick = model::logout)
+                            }
+                        } else {
+                            RetroWindow("profile.exe", "Мой аккаунт") { ProfileScreen(state, model) }
+                        }
                         if (state.user?.role == AccountRole.ADMIN) RetroWindow("admin.exe", "Администрирование") { AdminScreen(state, model) }
                     }
                     if (state.user?.role == AccountRole.ADMIN) RetroWindow("invites.exe", "Ссылки регистрации") { OwnerInviteScreen(state, model, admin = true) }
-                    if (state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
+                    if (state.calendarSavedAt == null && state.user?.role == AccountRole.TRACKER && state.ownPair == null) {
                         RetroWindow("invite.exe", "Пригласить партнёра") { OwnerInviteScreen(state, model) }
                     }
-                    if (!state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
+                    if (state.calendarSavedAt == null && !state.restoringSession && !state.needsSetup && (state.user == null || state.user?.role == AccountRole.PARTNER && state.ownPair == null || state.pendingInvite != null)) {
                         RetroWindow("invite.exe", "Приглашение партнёра") { JoinInviteScreen(state, model) }
                     }
-                    if (state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
-                    if (state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
-                    Text(
-                        "Токены хранятся только в памяти. После перезапуска приложения потребуется войти снова.",
-                        modifier = Modifier.widthIn(max = 470.dp), fontSize = 11.sp, lineHeight = 18.7.sp
-                    )
+                    if (state.calendarSavedAt == null && state.user != null) RetroWindow("password.exe", "Смена пароля") { OwnPasswordScreen(state, model) }
+                    if (state.calendarSavedAt == null && state.user != null) RetroWindow("account.exe", "Удаление аккаунта") { DeleteAccountScreen(state, model) }
                 }
             }
         }

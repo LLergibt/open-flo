@@ -66,11 +66,11 @@
         <span class="tag">{roleNames[other.role]}</span>
       </div>
       <p class="detail">@{other.username} · {other.is_active ? 'Аккаунт активен' : 'Аккаунт отключён'}</p>
-      <p class="detail">Связанный партнёр может читать календарь и записи дневника.</p>
+      <p class="detail">Связанный партнёр видит календарь и может добавлять свои отметки и заметки к дням.</p>
       {#if confirming}
         <div class="confirmation">
           <p>Прекратить связь с {other.display_name}? Новые данные больше не будут доступны партнёру.</p>
-          <p class="detail">Уже сохранённые вне приложения копии отозвать нельзя.</p>
+          <p class="detail">Записи партнёра в этой паре будут удалены. Устройство без сети узнает о прекращении связи при следующем подключении.</p>
           <div class="actions compact">
             <button type="button" onclick={() => void unlink()} disabled={busy || disabled}>{busy ? 'Прекращаем…' : 'Да, прекратить связь'}</button>
             <button class="secondary" type="button" onclick={() => { confirming = false; }} disabled={busy || disabled}>Отмена</button>

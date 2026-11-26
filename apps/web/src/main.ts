@@ -9,3 +9,9 @@ if (!target) {
 }
 
 mount(App, { target });
+
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  void navigator.serviceWorker.register('/sw.js').catch(() => {
+    // Calendar still works online when service workers are unavailable.
+  });
+}

@@ -4,6 +4,8 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -17,6 +19,14 @@ class AuthRepositoryTest {
     private suspend fun failure(code: String, action: suspend () -> Unit) {
         try { action(); fail("Expected a safe error code") }
         catch (error: ApiFailure) { assertEquals(code, error.code) }
+    }
+
+    private class SavedSession : SessionStore {
+        var credentials: NativeSession? = null
+
+        override suspend fun load(): NativeSession? = credentials
+        override suspend fun save(session: NativeSession) { credentials = session }
+        override suspend fun clear() { credentials = null }
     }
 
     @Test fun parallel401UsesOneRotatingRefresh() = runBlocking {
@@ -138,11 +148,92 @@ class AuthRepositoryTest {
         failure("unauthorized") { repository.me() }
     }
 
-    @Test fun newRepositoryHasNoPersistedSession() = runBlocking {
-        val calls = AtomicInteger()
-        val repository = AuthRepository(ApiTransport { _, _, _, _ -> calls.incrementAndGet(); ApiResponse(500, "") })
-        failure("unauthorized") { repository.me() }
-        assertEquals(0, calls.get())
+    @Test fun restartReusesValidAccessAndLogoutClearsPersistedSessionEvenOffline() = runBlocking {
+        val store = SavedSession()
+        val transport = ApiTransport { _, path, bearer, _ ->
+            when (path) {
+                "/api/auth/login" -> ApiResponse(200, credentials())
+                "/api/me" -> {
+                    assertEquals("fixture-access-a", bearer)
+                    ApiResponse(200, user)
+                }
+                "/api/auth/logout" -> throw ApiFailure("network_error")
+                else -> error("Valid access should not rotate on restart")
+            }
+        }
+        AuthRepository(transport, store).login("fixture_admin", "fixture-password-123")
+
+        val reopened = AuthRepository(transport, store)
+        assertTrue(reopened.restoreSession())
+        assertEquals("fixture_admin", reopened.me().username)
+        failure("network_error") { reopened.logout() }
+        assertFalse(AuthRepository(transport, store).restoreSession())
+    }
+
+    @Test fun transientRefreshFailuresKeepTheSavedSessionUntilTheServerRevokesIt() = runBlocking {
+        val store = SavedSession()
+        val transport = ApiTransport { _, path, _, _ ->
+            check(path == "/api/auth/login")
+            ApiResponse(200, credentials())
+        }
+        AuthRepository(transport, store).login("fixture_admin", "fixture-password-123")
+
+        val reopened = AuthRepository(ApiTransport { _, path, _, _ ->
+            if (path == "/api/auth/refresh") throw ApiFailure("network_error")
+            ApiResponse(401, """{"error":"unauthorized"}""")
+        }, store)
+        assertTrue(reopened.restoreSession())
+        failure("network_error") { reopened.me() }
+
+        val duringOutage = AuthRepository(ApiTransport { _, path, _, _ ->
+            if (path == "/api/auth/refresh") ApiResponse(502, "")
+            else ApiResponse(401, """{"error":"unauthorized"}""")
+        }, store)
+        assertTrue(duringOutage.restoreSession())
+        failure("internal_error") { duringOutage.me() }
+
+        val afterRevocation = AuthRepository(ApiTransport { _, _, _, _ ->
+            ApiResponse(401, """{"error":"unauthorized"}""")
+        }, store)
+        assertTrue(afterRevocation.restoreSession())
+        failure("unauthorized") { afterRevocation.me() }
+        assertFalse(AuthRepository(transport, store).restoreSession())
+    }
+
+    @Test fun rotationIsSavedEvenWhenTheRequestingScreenIsClosed() = runBlocking {
+        val store = SavedSession()
+        val refreshing = CompletableDeferred<Unit>()
+        val finishRefresh = CompletableDeferred<Unit>()
+        val transport = ApiTransport { _, path, bearer, body ->
+            when (path) {
+                "/api/auth/login" -> ApiResponse(200, credentials())
+                "/api/auth/refresh" -> {
+                    assertEquals("fixture-refresh-a", JSONObject(body!!).getString("refresh_token"))
+                    refreshing.complete(Unit)
+                    finishRefresh.await()
+                    ApiResponse(200, credentials("fixture-access-b", "fixture-refresh-b"))
+                }
+                "/api/me" -> if (bearer == "fixture-access-a") {
+                    ApiResponse(401, """{"error":"unauthorized"}""")
+                } else {
+                    assertEquals("fixture-access-b", bearer)
+                    ApiResponse(200, user)
+                }
+                else -> error("Unexpected fixture route")
+            }
+        }
+        val repository = AuthRepository(transport, store)
+        repository.login("fixture_admin", "fixture-password-123")
+        val request = launch { repository.me() }
+        refreshing.await()
+        request.cancel()
+        finishRefresh.complete(Unit)
+        request.cancelAndJoin()
+
+        assertEquals("fixture-refresh-b", store.credentials?.refresh)
+        val reopened = AuthRepository(transport, store)
+        assertTrue(reopened.restoreSession())
+        assertEquals("fixture_admin", reopened.me().username)
     }
 
     @Test fun unsafeServerErrorTextNeverBecomesUiError() = runBlocking {

@@ -748,7 +748,7 @@ async fn calendar_day_entries_follow_current_pair_and_only_owner_can_write() {
             .0,
         StatusCode::FORBIDDEN
     );
-    let (status, _, _) = f
+    let (status, _, pair) = f
         .request(
             "POST",
             "/api/admin/pairs",
@@ -776,6 +776,61 @@ async fn calendar_day_entries_follow_current_pair_and_only_owner_can_write() {
         f.request("DELETE", path, None, &partner_headers).await.0,
         StatusCode::FORBIDDEN
     );
+    let pair_id = pair["id"].as_str().unwrap();
+    assert_eq!(shared["viewer_id"], partner["id"]);
+    assert_eq!(shared["partner_pair_id"], pair_id);
+    let partner_path = format!("/api/partner-diary/{pair_id}/2025-11-01");
+    let note = json!({
+        "symptoms":["headache"], "events":["libido_high"], "mood":"happy",
+        "pain": 2, "notes":"Read a book"
+    });
+    for disallowed in [
+        json!({"symptoms":["cramps"],"mood":"","notes":""}),
+        json!({"symptoms":["discharge_watery"],"mood":"","notes":""}),
+        json!({"events":["ovulation_test_positive"],"mood":"","notes":""}),
+        json!({"events":["bleeding_after_sex"],"mood":"","notes":""}),
+        json!({"flow":"light","mood":"","notes":""}),
+    ] {
+        assert_eq!(
+            f.request("PUT", &partner_path, Some(disallowed), &partner_headers)
+                .await
+                .0,
+            StatusCode::BAD_REQUEST
+        );
+    }
+    assert_eq!(
+        f.request("PUT", &partner_path, Some(note.clone()), &owner_headers).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let wrong_viewer = [
+        ("authorization", partner_bearer.as_str()),
+        ("x-calendar-viewer", tracker["id"].as_str().unwrap()),
+    ];
+    assert_eq!(
+        f.request("PUT", &partner_path, Some(note.clone()), &wrong_viewer).await.0,
+        StatusCode::FORBIDDEN
+    );
+    assert_eq!(
+        f.request("PUT", &partner_path, Some(note.clone()), &partner_headers).await.0,
+        StatusCode::NO_CONTENT
+    );
+    let legacy_update = json!({"mood":"happy","notes":"Read another book"});
+    assert_eq!(
+        f.request("PUT", &partner_path, Some(legacy_update.clone()), &partner_headers)
+            .await
+            .0,
+        StatusCode::NO_CONTENT
+    );
+    for headers in [&owner_headers, &partner_headers] {
+        let (_, _, calendar) = f.request("GET", "/api/calendar", None, headers).await;
+        let shared_note = &calendar["partner_entries"][0];
+        assert_eq!(shared_note["notes"], legacy_update["notes"]);
+        for field in ["mood", "symptoms", "events", "pain"] {
+            assert_eq!(shared_note[field], note[field]);
+        }
+        assert!(shared_note.get("flow").is_none());
+        assert_eq!(calendar["entries"][0]["notes"], "Fixture");
+    }
     assert_eq!(
         f.request("DELETE", "/api/me/pair", None, &owner_headers)
             .await
@@ -788,4 +843,15 @@ async fn calendar_day_entries_follow_current_pair_and_only_owner_can_write() {
             .0,
         StatusCode::FORBIDDEN
     );
+    let (status, _, _) = f.request("POST", "/api/admin/pairs",
+        Some(json!({"tracker_id":tracker["id"],"partner_id":partner["id"]})),
+        &[("authorization", &admin_bearer)]).await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(
+        f.request("PUT", &partner_path, Some(note), &partner_headers).await.0,
+        StatusCode::FORBIDDEN
+    );
+    let (_, _, calendar) = f.request("GET", "/api/calendar", None, &partner_headers).await;
+    assert_ne!(calendar["partner_pair_id"], pair_id);
+    assert_eq!(calendar["partner_entries"], json!([]));
 }

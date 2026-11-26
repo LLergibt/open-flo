@@ -32,6 +32,11 @@ import java.util.Locale
 private val russian = Locale.forLanguageTag("ru")
 private val dayFormat = DateTimeFormatter.ofPattern("d MMMM yyyy", russian)
 private val monthFormat = DateTimeFormatter.ofPattern("LLLL yyyy", russian)
+private val OwnerDiaryTint = Color(0xFFFCE6F2)
+private val PartnerDiaryTint = Color(0xFFE5EFFC)
+private val OwnerDiaryMark = Color(0xFF91275E)
+private val PartnerDiaryMark = Color(0xFF225A9B)
+
 private val painLabels = listOf("Не отмечена", "Слабая", "Умеренная", "Сильная")
 private val moods = listOf("" to "Не отмечено", "calm" to "Спокойствие", "happy" to "Радость", "sad" to "Грусть",
     "anxious" to "Тревога", "irritable" to "Раздражительность", "energetic" to "Энергичность")
@@ -56,7 +61,11 @@ internal fun CalendarScreen(state: AuthState, model: AuthViewModel) {
         RetroButton("Обновить", enabled = !state.busy, secondary = true) { model.refreshCalendar() }
         return
     }
-    if (!data.owner) BodyText("Календарь и дневник · ${data.name}. Только просмотр.")
+    state.calendarSavedAt?.let {
+        val saved = it.atZone(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm"))
+        BodyText("Локальная копия · только просмотр · сохранена $saved.")
+    }
+    if (!data.owner) BodyText("Календарь и дневник · ${data.name}")
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         RetroButton("←", enabled = month > YearMonth.of(2000, 1) && !state.busy, secondary = true, fillWidth = false,
             modifier = Modifier.semantics { contentDescription = "Предыдущий месяц" }) { month = month.minusMonths(1) }
@@ -69,7 +78,9 @@ internal fun CalendarScreen(state: AuthState, model: AuthViewModel) {
         month = YearMonth.from(it)
         showing = true
     }
-    BodyText("● Месячные · факт   ┄ Прогноз   ~ Окно   ○ Овуляция\n≈ / ◌ Прошлые циклы   · Запись дневника")
+    BodyText("● Месячные · факт   ┄ Прогноз   ~ Окно   ○ Овуляция\n≈ / ◌ Прошлые циклы")
+    Text("● Запись владельца", color = OwnerDiaryMark, fontSize = 12.sp)
+    if (data.partnerDiaryEnabled) Text("◆ Запись партнёра", color = PartnerDiaryMark, fontSize = 12.sp)
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         RetroButton("Сегодня", enabled = !state.busy, secondary = true, fillWidth = false) {
             selected = data.today; month = YearMonth.from(selected); showing = true
@@ -77,9 +88,9 @@ internal fun CalendarScreen(state: AuthState, model: AuthViewModel) {
         RetroButton("Обновить", enabled = !state.busy, secondary = true, fillWidth = false) { model.refreshCalendar() }
     }
     ForecastCard(data)
-    if (data.owner) {
+    if (data.owner && state.calendarSavedAt == null) {
         OwnerCycleControls(data, selected, state, model)
-        BodyText("Связанный партнёр видит календарь и сохранённые записи.")
+        BodyText("Связанный партнёр видит календарь и может добавлять свои отметки и заметки.")
     }
     Notice(state)
     if (showing) key(selected) {
@@ -110,15 +121,21 @@ private fun MonthGrid(month: YearMonth, selected: LocalDate, data: CalendarData,
                     else -> Color(0xFFDCE9F8)
                 }
                 val logged = day in data.diary
+                val partnerLogged = day in data.partnerDiary
                 val current = day == data.today
                 val label = listOf(day.format(dayFormat), if (current) "сегодня" else "", kind.label,
-                    if (logged) "есть запись дневника" else "").filter(String::isNotEmpty).joinToString(", ")
+                    if (logged) "есть запись владельца" else "",
+                    if (partnerLogged) "есть запись партнёра" else "").filter(String::isNotEmpty).joinToString(", ")
                 Column(Modifier.weight(1f).heightIn(min = 48.dp).background(background)
                     .border(if (day == selected) 2.dp else 0.5.dp, Ink)
                     .semantics { contentDescription = label; this.selected = day == selected }
                     .clickable(enabled && day.year in 2000..2100, role = Role.Button) { select(day) },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    Text("${day.dayOfMonth}${if (logged) "·" else ""}", fontWeight = if (current) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(day.dayOfMonth.toString(), fontWeight = if (current) FontWeight.Bold else FontWeight.Normal, fontSize = 13.sp)
+                        if (logged) Text("●", color = OwnerDiaryMark, fontSize = 9.sp)
+                        if (partnerLogged) Text("◆", color = PartnerDiaryMark, fontSize = 9.sp)
+                    }
                     Text(kind.symbol.ifEmpty { " " }, fontSize = 11.sp)
                 }
             }
@@ -148,8 +165,13 @@ private fun ForecastCard(data: CalendarData) {
 @Composable
 private fun DaySheet(data: CalendarData, date: LocalDate, catalog: List<DiaryCategory>, state: AuthState, model: AuthViewModel, close: () -> Unit) {
     val entry = data.diary[date]
-    var editing by remember { mutableStateOf(false) }
-    var draft by remember(entry) { mutableStateOf(entry ?: DiaryDay()) }
+    val pairId = data.partnerPairId
+    val partnerEntry = data.partnerDiary[date]
+    val partnerCatalog = remember(catalog) { partnerCategories(catalog) }
+    val ownEntry = if (data.owner) entry else partnerEntry
+    val canWrite = state.calendarSavedAt == null && data.canEdit(date)
+    var editing by remember(pairId) { mutableStateOf(false) }
+    var draft by remember(pairId, ownEntry) { mutableStateOf(ownEntry ?: DiaryDay()) }
     var confirmDelete by remember { mutableStateOf(false) }
     LaunchedEffect(state.notice) { if (state.notice == "Изменения сохранены.") editing = false }
     Dialog(onDismissRequest = close, properties = DialogProperties(usePlatformDefaultWidth = false)) {
@@ -166,19 +188,38 @@ private fun DaySheet(data: CalendarData, date: LocalDate, catalog: List<DiaryCat
                     Text(date.format(dayFormat), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     data.kind(date).label.takeIf(String::isNotEmpty)?.let { BodyText(it) }
                     Notice(state)
-                    if (!editing) {
-                        DiarySummary(entry, catalog)
-                        if (data.canEdit(date)) RetroButton(if (entry == null) "Добавить запись" else "Редактировать запись", enabled = !state.busy) {
-                            draft = entry ?: DiaryDay(); editing = true
+                    if (!editing || !canWrite) {
+                        DiaryCard("День владельца дневника", OwnerDiaryTint) { DiarySummary(entry, catalog) }
+                        if (data.partnerDiaryEnabled || partnerEntry != null) {
+                            DiaryCard("День партнёра", PartnerDiaryTint) {
+                                DiarySummary(partnerEntry, partnerCatalog, showFlow = false)
+                            }
+                        }
+                        if (canWrite) RetroButton(if (ownEntry != null) "Редактировать свою запись" else "Добавить свою запись", enabled = !state.busy) {
+                            draft = ownEntry ?: DiaryDay()
+                            confirmDelete = false
+                            editing = true
                         }
                     } else {
                         RetroButton("Назад к подробностям", enabled = !state.busy, secondary = true) { editing = false; confirmDelete = false }
-                        DiaryFields(draft, catalog, !state.busy) { draft = it }
-                        RetroButton("Сохранить запись", enabled = !state.busy) { model.saveDiary(date, draft) }
-                        if (entry != null && !confirmDelete) RetroButton("Удалить запись дня", enabled = !state.busy, secondary = true) { confirmDelete = true }
+                        DiaryCard(
+                            if (data.owner) "День владельца дневника" else "День партнёра",
+                            if (data.owner) OwnerDiaryTint else PartnerDiaryTint
+                        ) {
+                            DiaryFields(
+                                draft, if (data.owner) catalog else partnerCatalog, !state.busy, showFlow = data.owner
+                            ) { draft = it }
+                            RetroButton("Сохранить запись", enabled = !state.busy && (data.owner || !draft.isEmpty)) {
+                                if (data.owner) model.saveDiary(date, draft)
+                                else pairId?.let { model.savePartnerDiary(it, date, draft) }
+                            }
+                        }
+                        if (ownEntry != null && !confirmDelete) RetroButton("Удалить запись дня", enabled = !state.busy, secondary = true) { confirmDelete = true }
                         if (confirmDelete) {
                             BodyText("Удалить запись за этот день?")
-                            RetroButton("Да, удалить запись", enabled = !state.busy) { model.deleteDiary(date) }
+                            RetroButton("Да, удалить запись", enabled = !state.busy) {
+                                if (data.owner) model.deleteDiary(date) else pairId?.let { model.deletePartnerDiary(it, date) }
+                            }
                             RetroButton("Отмена", enabled = !state.busy, secondary = true) { confirmDelete = false }
                         }
                     }
@@ -189,10 +230,19 @@ private fun DaySheet(data: CalendarData, date: LocalDate, catalog: List<DiaryCat
 }
 
 @Composable
-private fun DiarySummary(entry: DiaryDay?, catalog: List<DiaryCategory>) {
+private fun DiaryCard(title: String, tint: Color, content: @Composable () -> Unit) {
+    Column(Modifier.fillMaxWidth().background(tint).border(1.dp, Ink).padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, fontWeight = FontWeight.Bold)
+        content()
+    }
+}
+
+@Composable
+private fun DiarySummary(entry: DiaryDay?, catalog: List<DiaryCategory>, showFlow: Boolean = true) {
     if (entry == null) { BodyText("За этот день записей нет."); return }
     BodyText("Боль: ${painLabels.getOrElse(entry.pain) { "Не отмечена" }}")
-    BodyText("Интенсивность кровотечения: ${flows.toMap()[entry.flow]}")
+    if (showFlow) BodyText("Интенсивность кровотечения: ${flows.toMap()[entry.flow]}")
     BodyText("Настроение: ${moods.toMap()[entry.mood]}")
     for (group in catalog) {
         val selected = if (group.symptom) entry.symptoms else entry.events
@@ -206,9 +256,9 @@ private fun DiarySummary(entry: DiaryDay?, catalog: List<DiaryCategory>) {
 }
 
 @Composable
-private fun DiaryFields(entry: DiaryDay, catalog: List<DiaryCategory>, enabled: Boolean, update: (DiaryDay) -> Unit) {
+private fun DiaryFields(entry: DiaryDay, catalog: List<DiaryCategory>, enabled: Boolean, showFlow: Boolean, update: (DiaryDay) -> Unit) {
     ChoicePanel("Боль", painLabels.mapIndexed { index, label -> index.toString() to label }, entry.pain.toString(), enabled) { update(entry.copy(pain = it.toInt())) }
-    ChoicePanel("Интенсивность кровотечения", flows, entry.flow, enabled) { update(entry.copy(flow = it)) }
+    if (showFlow) ChoicePanel("Интенсивность кровотечения", flows, entry.flow, enabled) { update(entry.copy(flow = it)) }
     ChoicePanel("Настроение", moods, entry.mood, enabled) { update(entry.copy(mood = it)) }
     for (group in catalog) key(group.title) {
         val values = if (group.symptom) entry.symptoms else entry.events

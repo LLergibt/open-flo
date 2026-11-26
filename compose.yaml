@@ -1,4 +1,4 @@
-name: open-source-flo
+version: "3.8"
 services:
   api:
     build:

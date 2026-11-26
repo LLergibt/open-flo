@@ -1,37 +1,84 @@
 package org.opensourceflo.app
 
 import java.util.Locale
-import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
-class AuthRepository internal constructor(private val transport: ApiTransport) {
-    constructor() : this(HttpApiTransport())
+class AuthRepository internal constructor(
+    private val transport: ApiTransport,
+    private val store: SessionStore? = null
+) {
     private val sessionMutex = Mutex()
     private var session: NativeSession? = null
     private var generation = 0L
 
     suspend fun needsSetup(): Boolean = json(expect(transport.send("GET", "/api/setup/status", null, null), 200)).getBoolean("needs_setup")
 
-    suspend fun login(username: String, password: String): Account {
-        val attempt = sessionMutex.withLock { session = null; ++generation }
-        val body = JSONObject().put("username", username.trim().lowercase(Locale.ROOT)).put("password", password).put("client", "native")
-        val response = expect(transport.send("POST", "/api/auth/login", null, body.toString()), 200)
-        val loggedIn = decodeSession(response)
-        sessionMutex.withLock {
-            if (generation != attempt) throw ApiFailure("unauthorized")
-            session = loggedIn
-        }
-        return loggedIn.user
+    internal suspend fun restoreSession(): Boolean = sessionMutex.withLock {
+        if (session == null) session = store?.load()
+        session != null
     }
 
-    suspend fun clearSession() = sessionMutex.withLock { session = null; generation++ }
+    internal suspend fun sessionAccountId(): String? = sessionMutex.withLock { session?.accountId }
+
+    suspend fun login(username: String, password: String): Account {
+        val attempt = sessionMutex.withLock {
+            clearSessionLocked()
+            generation
+        }
+        val body = JSONObject().put("username", username.trim().lowercase(Locale.ROOT)).put("password", password).put("client", "native")
+        val response = expect(transport.send("POST", "/api/auth/login", null, body.toString()), 200)
+        val (account, loggedIn) = decodeSession(response)
+        sessionMutex.withLock {
+            if (generation != attempt) throw ApiFailure("unauthorized")
+            withContext(NonCancellable) { saveSession(loggedIn) }
+        }
+        return account
+    }
+
+    suspend fun clearSession() = sessionMutex.withLock { clearSessionLocked() }
+
+    private suspend fun clearSessionLocked() = withContext(NonCancellable) {
+        session = null
+        generation++
+        store?.clear()
+    }
+
+    private suspend fun saveSession(next: NativeSession) {
+        store?.save(next)
+        session = next
+    }
 
     suspend fun logout() {
-        val previous = sessionMutex.withLock { val old = session; session = null; generation++; old } ?: return
+        val previous = sessionMutex.withLock {
+            val current = session
+            clearSessionLocked()
+            current
+        } ?: return
         val body = JSONObject().put("refresh_token", previous.refresh).put("client", "native").toString()
         expect(transport.send("POST", "/api/auth/logout", null, body), 204)
+    }
+
+    private suspend fun refreshSession(current: NativeSession): NativeSession = withContext(NonCancellable) {
+        // Finish saving the rotation even if the screen that requested it is closed.
+        val payload = JSONObject().put("refresh_token", current.refresh).put("client", "native")
+        val response = transport.send("POST", "/api/auth/refresh", null, payload.toString())
+        when (response.status) {
+            200 -> Unit
+            401 -> {
+                clearSessionLocked()
+                throw ApiFailure("unauthorized")
+            }
+            429 -> throw ApiFailure("rate_limited")
+            else -> throw ApiFailure("internal_error")
+        }
+        val (_, refreshed) = decodeSession(response)
+        if (refreshed.accountId != current.accountId) throw ApiFailure("invalid_response")
+        saveSession(refreshed)
+        refreshed
     }
 
     private suspend fun protected(method: String, path: String, body: JSONObject? = null): ApiResponse {
@@ -42,36 +89,23 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
         val renewed = sessionMutex.withLock {
             val current = session ?: throw ApiFailure("unauthorized")
             if (generation != snapshot.second) throw ApiFailure("unauthorized")
-            if (current !== original) current else {
-                try {
-                    val payload = JSONObject().put("refresh_token", current.refresh).put("client", "native")
-                    val refreshed = decodeSession(expect(transport.send("POST", "/api/auth/refresh", null, payload.toString()), 200))
-                    if (refreshed.user.id != current.user.id) throw ApiFailure("invalid_response")
-                    session = refreshed
-                    refreshed
-                } catch (cancelled: CancellationException) {
-                    // The server may already have rotated the token; never replay it after cancellation.
-                    session = null
-                    generation++
-                    throw cancelled
-                } catch (_: Exception) {
-                    session = null
-                    generation++
-                    throw ApiFailure("unauthorized")
-                }
-            }
+            if (current !== original) current else refreshSession(current)
         }
         response = transport.send(method, path, renewed.access, body?.toString())
         if (response.status == 401 && errorCode(response) == "unauthorized") {
-            sessionMutex.withLock { if (session === renewed) { session = null; generation++ } }
+            sessionMutex.withLock { if (session === renewed) clearSessionLocked() }
             throw ApiFailure("unauthorized")
         }
         return response
     }
 
-    internal suspend fun calendar(): CalendarData {
-        val value = json(expect(protected("GET", "/api/calendar"), 200))
-        return runCatching { parseCalendar(value) }.getOrElse { throw ApiFailure("invalid_response") }
+    internal suspend fun calendar(): JSONObject = json(expect(protected("GET", "/api/calendar"), 200))
+
+    internal suspend fun savePartnerDiary(pairId: String, date: java.time.LocalDate, entry: DiaryDay) {
+        expect(protected("PUT", "/api/partner-diary/${safeId(pairId)}/$date", entry.json(includeFlow = false)), 204)
+    }
+    internal suspend fun deletePartnerDiary(pairId: String, date: java.time.LocalDate) {
+        expect(protected("DELETE", "/api/partner-diary/${safeId(pairId)}/$date"), 204)
     }
     internal suspend fun saveDiary(date: java.time.LocalDate, entry: DiaryDay) {
         expect(protected("PUT", "/api/diary/$date", entry.json()), 204)
@@ -173,7 +207,7 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
         val allowed = setOf("unauthorized", "forbidden", "invalid_input", "invalid_credentials", "conflict", "rate_limited", "internal_error", "invite_unavailable")
         val error = runCatching { JSONObject(response.body).optString("error") }.getOrDefault("")
         throw ApiFailure(if (error in allowed) error else when (response.status) {
-            401 -> "unauthorized"; 403 -> "forbidden"; 400 -> "invalid_input"; 409 -> "conflict"; 429 -> "rate_limited"; else -> "internal_error"
+            401 -> "unauthorized"; 403 -> "forbidden"; 400 -> "invalid_input"; 409 -> "conflict"; 429 -> "rate_limited"; 500, 502, 503, 504 -> "internal_error"; else -> "unexpected_status"
         })
     }
     private fun string(value: JSONObject, name: String): String = (value.opt(name) as? String)?.takeIf { it.isNotBlank() } ?: throw ApiFailure("invalid_response")
@@ -183,14 +217,14 @@ class AuthRepository internal constructor(private val transport: ApiTransport) {
     private fun pair(value: JSONObject): AccountPair = try {
         AccountPair(string(value, "id"), account(value.getJSONObject("tracker")), account(value.getJSONObject("partner")), string(value, "created_at"))
     } catch (_: Exception) { throw ApiFailure("invalid_response") }
-    private fun decodeSession(response: ApiResponse): NativeSession {
+    private fun decodeSession(response: ApiResponse): Pair<Account, NativeSession> {
         val value = json(response)
         val user = account(value.getJSONObject("user"))
-        if (!user.active) throw ApiFailure("unauthorized")
+        if (!user.active) throw ApiFailure("invalid_response")
         val access = string(value, "access_token")
         val refresh = string(value, "refresh_token")
         if (access.length > 8192 || refresh.length > 4096 || access.any { it == '\r' || it == '\n' }) throw ApiFailure("invalid_response")
-        return NativeSession(user, access, refresh)
+        return user to NativeSession(user.id, access, refresh)
     }
 }
 
@@ -204,6 +238,7 @@ fun authErrorMessage(code: String): String = when (code) {
     "invite_unavailable" -> "Приглашение недоступно: срок истёк, ссылка отозвана или уже использована."
     "conflict" -> "Аккаунт уже существует или один из участников уже связан в пару."
     "rate_limited" -> "Слишком много попыток. Попробуйте позже."
+    "session_storage" -> "Не удалось открыть защищённое хранилище сессии. Повторите попытку."
     "network_error" -> "Не удалось связаться с API. Проверьте подключение и адрес сервера."
     "invalid_response" -> "Сервер вернул некорректный ответ. Повторите попытку."
     else -> "Сервер временно недоступен. Повторите попытку."

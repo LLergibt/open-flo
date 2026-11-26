@@ -9,4 +9,4 @@ enum class AccountRole(val wire: String, val label: String) {
 data class Account(val id: String, val username: String, val displayName: String, val role: AccountRole, val active: Boolean)
 data class AccountPair(val id: String, val tracker: Account, val partner: Account, val createdAt: String)
 class ApiFailure(val code: String) : Exception(code)
-internal class NativeSession(val user: Account, val access: String, val refresh: String)
+internal class NativeSession(val accountId: String, val access: String, val refresh: String)

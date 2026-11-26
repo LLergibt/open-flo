@@ -24,11 +24,11 @@ if docker compose version >/dev/null 2>&1; then
 elif command -v docker-compose >/dev/null; then
     compose=(docker-compose)
 else
-    echo "Docker Compose v2 is required." >&2
+    echo "Docker Compose v2 or standalone Docker Compose 1.29.2 is required." >&2
     exit 1
 fi
 dc() {
-    "${compose[@]}" --env-file "$config" -f "$root/compose.prod.yaml" "$@"
+    "${compose[@]}" -p open-source-flo --env-file "$config" -f "$root/compose.prod.yaml" "$@"
 }
 read_config() {
     if [ ! -s "$config" ]; then
@@ -45,7 +45,7 @@ fi
 
 publish_certificate() {
     # Only the serving certificate and key are copied to the Nginx volume.
-    dc run --rm --no-deps --entrypoint sh certbot /deploy/publish-certificate.sh
+    dc run -T --rm --no-deps --entrypoint sh certbot /deploy/publish-certificate.sh
     dc exec -T web /bin/sh /deploy/configure-nginx.sh reload
 }
 
@@ -81,7 +81,7 @@ PY
             printf 'PUBLIC_ORIGIN=%s\n' "$origin" > "$config"
         fi
         dc up -d --build api web
-        dc run --rm --no-deps certbot certonly --non-interactive --agree-tos --email "$email" \
+        dc run -T --rm --no-deps certbot certonly --non-interactive --agree-tos --email "$email" \
             --webroot --webroot-path /var/www/acme --ip-address "$ip" \
             --preferred-profile shortlived --cert-name flo-ip --keep-until-expiring
         publish_certificate
@@ -90,14 +90,15 @@ PY
     renew)
         [ "$#" -eq 1 ] || usage
         read_config
-        dc up -d --no-build api web
-        dc run --rm --no-deps certbot renew --non-interactive --cert-name flo-ip
+        # Start missing or stopped services without replacing containers during renewal.
+        dc up -d --no-build --no-recreate api web
+        dc run -T --rm --no-deps certbot renew --non-interactive --cert-name flo-ip
         publish_certificate
         ;;
     dry-run)
         [ "$#" -eq 1 ] || usage
         read_config
-        dc run --rm --no-deps certbot renew --dry-run --non-interactive --cert-name flo-ip
+        dc run -T --rm --no-deps certbot renew --dry-run --non-interactive --cert-name flo-ip
         ;;
     install-timer)
         [ "$#" -eq 1 ] || usage

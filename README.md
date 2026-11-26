@@ -127,7 +127,7 @@ CHECK_ANDROID=1 ./scripts/check.sh
 При работающем Docker Engine:
 
 ```bash
-COOKIE_SECURE=false docker compose up --build
+COOKIE_SECURE=false docker compose -p open-source-flo up --build
 ```
 
 Эта команда предназначена для локальной проверки на http://127.0.0.1:8088. При standalone Compose используйте `docker-compose`.
@@ -135,7 +135,7 @@ COOKIE_SECURE=false docker compose up --build
 Первый администратор внутри контейнера:
 
 ```bash
-docker compose exec api flo-api create-admin --username root --display-name root
+docker compose -p open-source-flo exec api flo-api create-admin --username root --display-name root
 ```
 
 SQLite и ключ JWT сохраняются в томе `flo-data` (`/data/flo.db`, `/data/jwt.key`). Обычный `docker compose down` сохраняет том; `down -v` удаляет данные. Для публичной установки нужны HTTPS и собственный origin; текущий шаблон публикует порт только на loopback. Контейнерные сборки требуют отдельной проверки при доступном Docker daemon.

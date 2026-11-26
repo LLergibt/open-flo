@@ -44,7 +44,7 @@ internal fun ProfileScreen(state: AuthState, model: AuthViewModel) {
             RetroCard {
                 Text(other.displayName, fontSize = 18.sp)
                 BodyText("@${other.username} · ${other.role.label}")
-                ConfirmUnlink("Прекратить связь", "Прекратить связь с ${other.displayName}? Новые данные больше не будут доступны партнёру.", state.busy) { model.unlinkOwnPair() }
+                ConfirmUnlink("Прекратить связь", "Прекратить связь с ${other.displayName}? Записи партнёра в этой паре будут удалены.", state.busy) { model.unlinkOwnPair() }
             }
         }
     }
@@ -74,7 +74,7 @@ internal fun AdminScreen(state: AuthState, model: AuthViewModel) {
                 Text(pair.tracker.displayName + " ↔ " + pair.partner.displayName, fontSize = 17.sp, lineHeight = 25.sp)
                 BodyText("@${pair.tracker.username} · @${pair.partner.username}")
                 BodyText("Создана: ${pair.createdAt}")
-                ConfirmUnlink("Разорвать пару", "Прекратить связь? Новые данные больше не будут доступны партнёру.", state.busy) { model.unlinkPair(pair) }
+                ConfirmUnlink("Разорвать пару", "Прекратить связь? Записи партнёра в этой паре будут удалены.", state.busy) { model.unlinkPair(pair) }
             }
         } }
     }
