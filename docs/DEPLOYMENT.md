@@ -13,7 +13,7 @@ Let’s Encrypt выдаёт доверенные IP-сертификаты ср
 На сервере клонируйте ветку в постоянный каталог, например `/opt/open-flo`. Используйте доверенную копию с ограниченным правом записи. Таймер будет выполнять скрипт из этого каталога от root. Плейсхолдеры PUBLIC_IP и EMAIL замените своим реальным адресом и контактной почтой.
 
 ```sh
-git clone --branch feat/auth-and-pairing https://github.com/LLergibt/open-flo.git /opt/open-flo
+sudo git clone --branch main https://github.com/LLergibt/open-flo.git /opt/open-flo
 cd /opt/open-flo
 sudo ./scripts/ip-tls.sh init PUBLIC_IP EMAIL
 sudo ./scripts/ip-tls.sh install-timer
